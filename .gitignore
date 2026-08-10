@@ -1,0 +1,25 @@
+# PRlogue config (untrusted, per-repo)
+.prlogue.yaml
+*.yaml.*.bak
+
+# Build artifacts
+/prlogue
+dist/
+coverage.out
+coverage.html
+
+# Tests
+.temp-test/
+*.test
+*.out
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Trash (see deletion policy)
+.trash/
+
+# Logs
+*.log
