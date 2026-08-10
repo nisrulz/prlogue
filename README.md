@@ -57,3 +57,7 @@ Using LM Studio, OpenAI, or another OpenAI-compatible server? See [the reference
 - [Development](docs/development.md): build, test, audit
 - [Testing](docs/testing.md): unit tests and the end-to-end suite
 - [Releasing](docs/releasing.md): checks, tags, release artifacts
+
+## License
+
+[Apache-2.0](LICENSE)
