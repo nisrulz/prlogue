@@ -1,0 +1,12 @@
+Output only a PR description in this format and nothing else:
+
+Title: <one-line PR title>
+
+### PR Description
+Write a 2-3 sentence summary of what the PR does and why.
+
+### Key Changes
+Use a bullet list for relevant changes. Omit this section if there are no relevant changes.
+
+Use the configured headings and bullet style. Omit any section that has no relevant information. Do not add placeholder categories or filler text.
+Keep one blank line between sections. When you mention syntax from the diff, copy the complete syntax exactly. Do not truncate delimiters or invent a partial code token. If you cannot copy it exactly, describe the change without the token.
