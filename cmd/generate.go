@@ -17,6 +17,7 @@ import (
 	"github.com/nisrulz/prlogue/internal/git"
 	"github.com/nisrulz/prlogue/internal/processor"
 	"github.com/nisrulz/prlogue/internal/provider"
+	"github.com/nisrulz/prlogue/internal/spinner"
 	"github.com/nisrulz/prlogue/internal/types"
 	"github.com/spf13/cobra"
 )
@@ -103,7 +104,11 @@ func runGenerate() error {
 	p := newProvider(settings.baseURL, cfg.APIKey, settings.model)
 
 	gen := generator.NewGenerator(p, settings.model)
+
+	spin := spinner.New("Generating PR description")
+	spin.Start()
 	genResult, err := gen.Generate(ctx, genInput)
+	spin.Stop()
 	if err != nil {
 		return err
 	}

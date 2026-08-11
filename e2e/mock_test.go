@@ -1,30 +1,26 @@
-// Command mock-openai-server serves the small OpenAI-compatible API
-// required by live-test.sh.
-package main
+//go:build e2e
+
+package e2e
 
 import (
 	"encoding/json"
 	"io"
-	"log"
-	"net"
 	"net/http"
-	"os"
-	"strconv"
+	"net/http/httptest"
 )
 
+// completionContent mirrors the format a real model returns for the default
+// output style prompt: a title line followed by a PR description and key
+// changes, each under a heading with direct content.
 const completionContent = `Title: CI test PR
 
 ### PR Description
+Mock summary of the PR changes.
 
-## Features
-- Mock generated description.
+### Key Changes
+- Mock generated description.`
 
-## Documentation
-- Mock provider response.`
-
-func main() {
-	urlFile := os.Args[1]
-
+func startMockServer() *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -54,16 +50,7 @@ func main() {
 			},
 		})
 	})
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		log.Fatal(err)
-	}
-	url := "http://127.0.0.1:" + strconv.Itoa(listener.Addr().(*net.TCPAddr).Port) + "/v1\n"
-	if err := os.WriteFile(urlFile, []byte(url), 0o644); err != nil {
-		log.Fatal(err)
-	}
-	log.Fatal(http.Serve(listener, mux))
+	return httptest.NewServer(mux)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

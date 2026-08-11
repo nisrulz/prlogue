@@ -12,7 +12,21 @@ make test
 
 ## End-to-end tests
 
-`make test-live` runs `scripts/live-test.sh`. It builds the binary, creates throwaway git repos under `.temp-test/`, and runs `prlogue generate` in each one. Then it greps the output to check the behavior each scenario expects.
+`make test-live` runs the Go end-to-end suite in `e2e/`:
+
+```bash
+go test -tags e2e -count=1 ./e2e/
+```
+
+The suite builds the binary, creates throwaway git repositories under the
+system temp directory, and runs `prlogue generate` in each one. It checks the
+output each scenario expects. Tests are grouped by concern (repository state,
+generation, chunking, output format, config validation, config limits,
+repository config, doctor), so you can run one group at a time:
+
+```bash
+go test -tags e2e -count=1 -run TestConfigValidation ./e2e/
+```
 
 The scenarios cover the awkward cases:
 
@@ -24,9 +38,13 @@ The scenarios cover the awkward cases:
 - Special characters in the diff
 - Large diffs that force chunking
 
-The script requires Ollama with the default model (`lfm2.5:8b`) when run locally. It does not use the template fallback. Start Ollama and pull the model before you run `make test-live`.
+The suite requires Ollama with the default model (`lfm2.5:8b`) when run
+locally. Start Ollama and pull the model before you run `make test-live`.
 
-CI sets `PRLOGUE_LIVE_TEST_PROVIDER=mock`. This starts a local OpenAI-compatible mock server for the end-to-end tests. The mock is a small Go program (`scripts/mock-openai-server.go`) with no external dependencies, so the suite needs no Python runtime. Do not set this variable locally when you want to test against Ollama.
+CI sets `PRLOGUE_LIVE_TEST_PROVIDER=mock`. This starts an in-process
+OpenAI-compatible mock server (`httptest`) for the end-to-end tests, so the
+suite needs no live model server and no external binary. Do not set this
+variable locally when you want to test against Ollama.
 
 ## Test the fallback
 

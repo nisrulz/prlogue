@@ -14,6 +14,7 @@ import (
 	"github.com/nisrulz/prlogue/internal/config"
 	"github.com/nisrulz/prlogue/internal/git"
 	"github.com/nisrulz/prlogue/internal/provider"
+	"github.com/nisrulz/prlogue/internal/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -78,9 +79,13 @@ func runDoctor() error {
 		report.pass("api key", "set")
 	}
 
-	if report.checkEndpoint(cfg) {
+	spin := spinner.New("Checking provider")
+	spin.Start()
+	endpointOK := report.checkEndpoint(cfg)
+	if endpointOK {
 		report.checkLLM(cfg)
 	}
+	spin.Stop()
 
 	if err := config.ProjectConfigErr(); err != nil {
 		report.fail("repo config", err.Error())

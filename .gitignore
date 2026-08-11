@@ -9,7 +9,6 @@ coverage.out
 coverage.html
 
 # Tests
-.temp-test/
 *.test
 *.out
 

@@ -43,8 +43,7 @@ graph LR
 | `internal/config/security_prompt.txt` | Immutable security system prompt |
 | `internal/config/sanitization_prompt.txt` | Immutable output sanitization system prompt |
 | `internal/types/types.go` | Shared types + helpers |
-| `scripts/live-test.sh` | End-to-end tests in throwaway git repositories |
-| `scripts/mock-openai-server.go` | CI OpenAI-compatible mock server |
+| `e2e/` | Go end-to-end test suite (build tag `e2e`; mock provider runs in-process) |
 
 ## Commands
 
@@ -66,9 +65,10 @@ Run `make audit` before opening a PR. It runs the race detector, `go vet`, and
 Use `make install` to install the binary at `~/go/bin`. Use `make snapshot` to
 test a GoReleaser build without publishing.
 
-`make test-live` builds the binary and tests it in throwaway repositories under
-`.temp-test/`. Local runs require a live Ollama provider. CI sets
-`PRLOGUE_LIVE_TEST_PROVIDER=mock` and uses the local OpenAI-compatible mock.
+`make test-live` builds the binary and runs the Go end-to-end suite in `e2e/`
+(`go test -tags e2e`). Local runs require a live Ollama provider. CI sets
+`PRLOGUE_LIVE_TEST_PROVIDER=mock` and uses an in-process OpenAI-compatible
+mock server.
 
 ## Configuration
 
