@@ -35,11 +35,18 @@ Exit code is non-zero when a check fails.`,
 type doctorReport struct {
 	failures int
 	problems []doctorProblem
+	entries  []doctorEntry
 }
 
 type doctorProblem struct {
 	label string
 	msg   string
+}
+
+type doctorEntry struct {
+	status string
+	label  string
+	msg    string
 }
 
 func runDoctor() error {
@@ -78,6 +85,7 @@ func runDoctor() error {
 	} else {
 		report.pass("api key", "set")
 	}
+	report.flush()
 
 	spin := spinner.New("Checking provider")
 	spin.Start()
@@ -86,6 +94,7 @@ func runDoctor() error {
 		report.checkLLM(cfg)
 	}
 	spin.Stop()
+	report.flush()
 
 	if err := config.ProjectConfigErr(); err != nil {
 		report.fail("repo config", err.Error())
@@ -170,20 +179,38 @@ func isModelsUnsupported(err error) bool {
 }
 
 func (r *doctorReport) pass(label, msg string) {
-	fmt.Printf("  ✔ %-17s %s\n", label, msg)
+	r.entries = append(r.entries, doctorEntry{status: "pass", label: label, msg: msg})
 }
 
 func (r *doctorReport) warn(label, msg string) {
-	fmt.Printf("  ⚠ %-17s %s\n", label, msg)
+	r.entries = append(r.entries, doctorEntry{status: "warn", label: label, msg: msg})
 }
 
 func (r *doctorReport) fail(label, msg string) {
 	r.failures++
 	r.problems = append(r.problems, doctorProblem{label: label, msg: msg})
-	fmt.Printf("  ✗ %-17s %s\n", label, msg)
+	r.entries = append(r.entries, doctorEntry{status: "fail", label: label, msg: msg})
+}
+
+// flush prints buffered check results. Printing is deferred so results that
+// arrive while the spinner is animating never share a line with a spinner
+// frame; the spinner line is cleared first via Stop.
+func (r *doctorReport) flush() {
+	for _, e := range r.entries {
+		switch e.status {
+		case "warn":
+			fmt.Printf("  ⚠ %-17s %s\n", e.label, e.msg)
+		case "fail":
+			fmt.Printf("  ✗ %-17s %s\n", e.label, e.msg)
+		default:
+			fmt.Printf("  ✔ %-17s %s\n", e.label, e.msg)
+		}
+	}
+	r.entries = nil
 }
 
 func (r *doctorReport) finish() error {
+	r.flush()
 	fmt.Println()
 	if r.failures == 0 {
 		fmt.Println("All checks passed.")
