@@ -49,8 +49,8 @@ model server or external binary. Do not set this variable when testing Ollama.
 
 The mock answers commit-summary calls with a fixed JSON summary and PR
 generation calls with a fixed completion, so the full pipeline runs end to
-end. The per-commit summarizer accepts any well-formed JSON, so the exact
-subject in the mock response does not matter.
+end. The summarizer overwrites the hash and subject with the real commit, so
+the subject in the mock response does not matter.
 
 ## Test the fallback
 

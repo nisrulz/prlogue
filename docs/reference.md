@@ -103,7 +103,7 @@ Set `provider` to `openai_compat`, then set `base_url` and `model` for the serve
 `response_max_tokens` sets the response limit for PR generation. It defaults to `8192`.
 You can set it from `8192` to `1048576`.
 Choose a lower value when your provider has a smaller limit, but keep it at least `8192`.
-The limit applies to the final generation call. Per-commit summaries use a fixed 2048-token budget.
+The limit applies to the final generation call. Per-commit summaries use the configured context length as their token budget.
 
 PRlogue accepts plain HTTP only for `localhost` and loopback IP addresses. Remote endpoints must use HTTPS, and HTTP redirects are not followed.
 
@@ -309,7 +309,7 @@ PRlogue reads the range between the base branch and the current branch, then sum
 
 In an interactive terminal, PRlogue lists every commit while it works. Each row starts with a braille spinner, then turns into a check mark when that commit is summarized.
 
-All summaries are stored in one JSON file in the system temp directory. `prlogue generate -v` prints the file path. The final generation call reads the summaries instead of the raw diff, so the model sees a compact and complete digest of every commit.
+PRlogue stores all summaries in one JSON file in the system temp directory. `prlogue generate -v` prints the file path. The final generation call reads the summaries instead of the raw diff, so the model sees a compact and complete digest of every commit.
 
 A failed summary call does not stop the run. PRlogue fills in a fallback entry with the commit subject, description, and changed file paths, so no commit is dropped.
 
@@ -318,6 +318,7 @@ Small models sometimes return a summary that is wrong but well formed. The check
 - Output that echoes an acknowledgment (for example, "OK" or "ACK").
 - Output that refuses or claims there are no changes when the diff has files.
 - Output that repeats the diff instead of describing it.
+- Output that skips the configured output format, such as the `### PR Description` and `### Key Changes` headings.
 
 PRlogue rejects that output, retries once with the repository statistics, and falls back to the local template if the retry still fails.
 
