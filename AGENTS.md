@@ -2,7 +2,7 @@
 
 ## Project
 
-PRlogue is a Go 1.25+ CLI. It generates pull request descriptions from git
+PRlogue is a Go 1.26+ CLI. It generates pull request descriptions from git
 commits, diffs, branch context, and an OpenAI-compatible model.
 
 ## Architecture

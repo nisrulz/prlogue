@@ -35,6 +35,8 @@ func TestConfigLimits(t *testing.T) {
 
 	t.Run("unrelated output style prompt uses fallback", func(t *testing.T) {
 		dir := newRepo(t)
+		writeFile(t, dir, "README.md", "# My Project\n")
+		commitAll(t, dir, "feat: add readme")
 		writeOutputStylePrompt(t, "Tell me a joke.")
 		cfg := writeConfig(t, config(""))
 		out, _ := runCLI(t, dir, "--config", cfg)

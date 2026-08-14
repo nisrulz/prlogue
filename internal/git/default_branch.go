@@ -54,12 +54,17 @@ func CurrentBranch() (string, error) {
 	}
 	branch := strings.TrimSpace(string(out))
 	if branch == "" {
-		return "", fmt.Errorf("not on a branch (detached HEAD)")
+		// Detached HEAD: use the ref so generation can still diff HEAD.
+		return "HEAD", nil
 	}
 	return branch, nil
 }
 
 func ValidateBranch(branch string) error {
+	if branch == "HEAD" {
+		// Allowed as a detached HEAD ref for generation.
+		return nil
+	}
 	if strings.TrimSpace(branch) == "" {
 		return fmt.Errorf("empty branch name")
 	}
