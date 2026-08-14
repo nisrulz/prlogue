@@ -141,6 +141,7 @@ func (g *Generator) generateWithDefense(ctx context.Context, input *GenerateInpu
 	if err != nil {
 		return "", err
 	}
+	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "### PR Description")
 	for attempt := 0; attempt < 2; attempt++ {
 		resp, err := g.p.Chat(ctx, provider.ChatRequest{
 			Model:       g.model,
@@ -154,12 +155,12 @@ func (g *Generator) generateWithDefense(ctx context.Context, input *GenerateInpu
 			return "", fmt.Errorf("generate LLM: %w", err)
 		}
 		cleanOutput := sanitizeLLMOutput(resp.Content)
-		reason := outputRejectionReason(input, cleanOutput)
+		reason := outputRejectionReason(input, useStandardStyle, cleanOutput)
 		if reason == "" {
 			return cleanOutput, nil
 		}
 		if attempt == 0 {
-			messages = append(messages, provider.ChatMessage{Role: "user", Content: buildRetryInstruction(input, reason)})
+			messages = append(messages, provider.ChatMessage{Role: "user", Content: buildRetryInstruction(input, useStandardStyle, reason)})
 			continue
 		}
 		return "", fmt.Errorf("%w: %s", errInvalidLLMOutput, reason)
@@ -219,7 +220,7 @@ func (g *Generator) injectContext(ctx context.Context, input *GenerateInput, mes
 
 // outputRejectionReason explains why the model output is unusable, or returns
 // an empty string when the output is accepted.
-func outputRejectionReason(input *GenerateInput, s string) string {
+func outputRejectionReason(input *GenerateInput, useStandardStyle bool, s string) string {
 	if !isUsableLLMOutput(s) {
 		return "output failed PR description validation"
 	}
@@ -232,15 +233,38 @@ func outputRejectionReason(input *GenerateInput, s string) string {
 	if input.DiffStats.Files > 0 && claimsNoChanges(s) {
 		return "model reported no changes despite repository data"
 	}
+	if !outputFollowsFormat(useStandardStyle, input.DiffStats.Files, s) {
+		return "output does not follow the configured output format"
+	}
 	return ""
+}
+
+// outputFollowsFormat reports whether the reply carries the headings the
+// standard output style requires: a PR description section and, when files
+// changed, a key changes section.
+func outputFollowsFormat(useStandardStyle bool, files int, s string) bool {
+	if !useStandardStyle {
+		return true
+	}
+	if !strings.Contains(s, "### PR Description") {
+		return false
+	}
+	if files > 0 && !strings.Contains(s, "### Key Changes") {
+		return false
+	}
+	return true
 }
 
 // buildRetryInstruction points the model back at the repository data and the
 // collected statistics after a rejected output.
-func buildRetryInstruction(input *GenerateInput, reason string) string {
-	return fmt.Sprintf(
+func buildRetryInstruction(input *GenerateInput, useStandardStyle bool, reason string) string {
+	instruction := fmt.Sprintf(
 		"Your previous reply was rejected: %s. The repository data above contains %d changed file(s) with +%d/-%d lines and %d commit(s). Read the diff and the commit list in the repository data above. Generate the PR title and description from that data. Do not claim there are no changes and do not reply with an acknowledgment.",
 		reason, input.DiffStats.Files, input.DiffStats.Additions, input.DiffStats.Deletions, len(input.Commits))
+	if useStandardStyle {
+		instruction += " Follow the output format: put 'Title: <title>' on the first line, then '### PR Description' with the summary, then '### Key Changes' with one bullet per change."
+	}
+	return instruction
 }
 
 // stripTitleAndHeadings returns the body of a model reply with title lines and

@@ -222,7 +222,7 @@ func TestGenerate_OutputStylePromptOverride(t *testing.T) {
 
 func TestGenerate_UsesFilePromptWhenUnset(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "Title: Default\n\n### PR Description\nSummary."}
+	p := &captureProvider{result: "Title: Default\n\n### PR Description\nSummary.\n\n### Key Changes\n- Added a default summary."}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 1, Additions: 1},
 		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/default"},
@@ -300,7 +300,7 @@ func TestSanitizeLLMOutput_AddsSpacingAndDropsPartialShortcodes(t *testing.T) {
 
 func TestGenerate_SendsEachPromptInItsOwnCall(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "Title: Multi\n\n### PR Description\nSummary."}
+	p := &captureProvider{result: "Title: Multi\n\n### PR Description\nSummary.\n\n### Key Changes\n- Added a summary."}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 1, Additions: 1},
 		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/multi"},
@@ -360,6 +360,47 @@ func TestGenerate_AckOnlyOutputRetriesThenFallsBack(t *testing.T) {
 	}
 	if !requestContains(p.requests[5].Messages, "Your previous reply was rejected: model echoed an acknowledgment") {
 		t.Error("expected the data-pointing retry instruction in the last request")
+	}
+}
+
+func TestOutputFollowsFormat(t *testing.T) {
+	if !outputFollowsFormat(true, 1, "### PR Description\n\nSummary.\n\n### Key Changes\n- x") {
+		t.Error("conforming output was rejected")
+	}
+	if outputFollowsFormat(true, 1, "### PR Description\n\nSummary.") {
+		t.Error("output missing Key Changes passed the format check")
+	}
+	if !outputFollowsFormat(true, 0, "### PR Description\n\nSummary.") {
+		t.Error("output without Key Changes failed for a no-file change")
+	}
+	if outputFollowsFormat(true, 1, "Just a paragraph.") {
+		t.Error("heading-less output passed the format check")
+	}
+	if !outputFollowsFormat(false, 1, "Just a paragraph.") {
+		t.Error("custom style output was rejected")
+	}
+}
+
+func TestGenerate_RejectsOutputThatSkipsTheFormat(t *testing.T) {
+	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
+	p := &captureProvider{result: "### PR Description\n\nA plain paragraph with no structure."}
+	input := &GenerateInput{
+		DiffStats:     DiffStats{Files: 2, Additions: 5, Deletions: 1},
+		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/format"},
+		StagedContext: true,
+	}
+	result, err := NewGenerator(p, "model").Generate(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !result.TemplateUsed {
+		t.Fatal("expected template fallback for output that skips the format")
+	}
+	if len(p.requests) != 6 {
+		t.Fatalf("expected 6 API calls (4 context + 2 attempts), got %d", len(p.requests))
+	}
+	if !requestContains(p.requests[5].Messages, "Follow the output format") {
+		t.Error("retry does not state the output format")
 	}
 }
 
@@ -433,7 +474,7 @@ func TestGenerate_RejectsNoChangesClaimAndRetries(t *testing.T) {
 }
 
 func TestGenerate_SingleCallPath(t *testing.T) {
-	p := &captureProvider{result: "Title: One\n\n### PR Description\nSummary."}
+	p := &captureProvider{result: "Title: One\n\n### PR Description\nSummary.\n\n### Key Changes\n- Added a summary."}
 	input := &GenerateInput{
 		DiffStats:         DiffStats{Files: 1, Additions: 1},
 		BranchCtx:         &collector.BranchContext{CurrentBranch: "feat/one"},
