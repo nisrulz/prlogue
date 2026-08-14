@@ -31,7 +31,7 @@ const openAICompatProvider = "openai_compat"
 
 const DefaultResponseMaxTokens = 8192
 
-//go:embed default_prompt.txt output_style_prompt.txt security_prompt.txt sanitization_prompt.txt commit_summary_prompt.txt
+//go:embed prompts/*.txt
 var promptFiles embed.FS
 
 func DefaultPrompt() string {
@@ -55,7 +55,7 @@ func CommitSummaryPrompt() string {
 }
 
 func readPromptFile(name string) string {
-	data, err := promptFiles.ReadFile(name)
+	data, err := promptFiles.ReadFile("prompts/" + name)
 	if err != nil {
 		panic(fmt.Sprintf("read embedded prompt %q: %v", name, err))
 	}

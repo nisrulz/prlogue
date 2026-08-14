@@ -41,11 +41,11 @@ graph LR
 | `internal/collector/context.go` | Branch + issue refs |
 | `internal/sysinfo/memory.go` | RAM detection + LMS integration |
 | `internal/config/config.go` | Trusted config, provider profiles, validation, and auto context |
-| `internal/config/default_prompt.txt` | Embedded PR analysis task prompt |
-| `internal/config/output_style_prompt.txt` | Embedded fallback style prompt |
-| `internal/config/security_prompt.txt` | Immutable security system prompt |
-| `internal/config/sanitization_prompt.txt` | Immutable output sanitization system prompt |
-| `internal/config/commit_summary_prompt.txt` | Embedded per-commit summarization prompt |
+| `internal/config/prompts/default_prompt.txt` | Embedded PR analysis task prompt |
+| `internal/config/prompts/output_style_prompt.txt` | Embedded fallback style prompt |
+| `internal/config/prompts/security_prompt.txt` | Immutable security system prompt |
+| `internal/config/prompts/sanitization_prompt.txt` | Immutable output sanitization system prompt |
+| `internal/config/prompts/commit_summary_prompt.txt` | Embedded per-commit summarization prompt |
 | `internal/types/types.go` | Shared types + helpers |
 | `e2e/` | Go end-to-end test suite (build tag `e2e`; mock provider runs in-process) |
 
