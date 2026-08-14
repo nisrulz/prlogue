@@ -40,6 +40,7 @@ func showConfig() error {
 	fmt.Fprintf(os.Stdout, "provider:                    %s\n", cfg.Provider)
 	fmt.Fprintf(os.Stdout, "model:                       %s\n", cfg.Model)
 	fmt.Fprintf(os.Stdout, "base_url:                    %s\n", cfg.BaseURL)
+	fmt.Fprintf(os.Stdout, "response_max_tokens:         %d\n", cfg.ResponseMaxTokens)
 	fmt.Fprintf(os.Stdout, "api_key:                     %s\n", secretStatus(cfg.APIKey))
 	fmt.Fprintf(os.Stdout, "no_think:                    %v\n", cfg.NoThink)
 	fmt.Fprintf(os.Stdout, "output_style_prompt:         %s\n", promptStatus(cfg.OutputStylePrompt))
@@ -84,6 +85,8 @@ func configValue(cfg *config.Config, key string) (string, bool) {
 		return cfg.Model, true
 	case "base_url":
 		return cfg.BaseURL, true
+	case "response_max_tokens":
+		return strconv.Itoa(cfg.ResponseMaxTokens), true
 	case "api_key":
 		return secretStatus(cfg.APIKey), true
 	case "no_think":

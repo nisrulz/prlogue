@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,11 +49,20 @@ func TestDefaultConfig_IsValidOpenAICompat(t *testing.T) {
 	if cfg.BaseURL != "http://localhost:11434/v1" {
 		t.Errorf("base_url = %q", cfg.BaseURL)
 	}
-	if cfg.OutputStylePrompt != DefaultPrompt() {
+	if cfg.ResponseMaxTokens != DefaultResponseMaxTokens {
+		t.Errorf("response_max_tokens = %d, want %d", cfg.ResponseMaxTokens, DefaultResponseMaxTokens)
+	}
+	if cfg.OutputStylePrompt != DefaultOutputStylePrompt() {
 		t.Error("default prompt is not configured")
 	}
-	if !strings.Contains(cfg.OutputStylePrompt, "Omit this section") {
+	if !strings.Contains(cfg.OutputStylePrompt, "Omit `### Key Changes`") {
 		t.Error("default prompt must omit Key Changes when the diff has no meaningful changes")
+	}
+	if !strings.Contains(DefaultPrompt(), "assume a default branch name") {
+		t.Error("default task prompt must explain default branch handling")
+	}
+	if strings.Contains(DefaultPrompt(), "### PR Description") {
+		t.Error("default task prompt must not define the output style")
 	}
 	if strings.Contains(cfg.OutputStylePrompt, "IMMUTABLE") || strings.Contains(cfg.OutputStylePrompt, "security policy") {
 		t.Error("default output style prompt must not contain immutable policy rules")
@@ -135,6 +145,29 @@ func TestLoad_FirstRunCreatesConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "prlogue", "config.yaml")); err != nil {
 		t.Errorf("config file was not created on first run: %v", err)
+	}
+}
+
+func TestLoad_MissingResponseMaxTokensUsesDefault(t *testing.T) {
+	p := writeConfigT(t, nil)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	updated := strings.Replace(string(data), fmt.Sprintf("response_max_tokens: %d\n", DefaultResponseMaxTokens), "", 1)
+	if updated == string(data) {
+		t.Fatal("test config did not contain response_max_tokens")
+	}
+	if err := os.WriteFile(p, []byte(updated), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ResponseMaxTokens != DefaultResponseMaxTokens {
+		t.Errorf("response_max_tokens = %d, want %d", cfg.ResponseMaxTokens, DefaultResponseMaxTokens)
 	}
 }
 
@@ -249,6 +282,16 @@ func TestValidate_RejectsOversizedOutputStylePrompt(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsInvalidResponseMaxTokens(t *testing.T) {
+	for _, value := range []int{0, 1, DefaultResponseMaxTokens - 1, maxResponseTokens + 1} {
+		cfg := validConfig()
+		cfg.ResponseMaxTokens = value
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "response_max_tokens") {
+			t.Errorf("response_max_tokens=%d: expected validation error, got %v", value, err)
+		}
+	}
+}
+
 func TestSave_RoundTripPersistsOutputStylePrompt(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "cfg.yaml")
 	cfg := validConfig()
@@ -296,7 +339,7 @@ func TestReset_BackupsAndWritesDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load reset config: %v", err)
 	}
-	if reset.OutputStylePrompt != DefaultPrompt() {
+	if reset.OutputStylePrompt != DefaultOutputStylePrompt() {
 		t.Error("reset config does not contain the default prompt")
 	}
 }

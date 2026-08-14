@@ -200,6 +200,7 @@ func buildGenerateInput(diffs []types.FileDiff, commits []types.Commit, branchCt
 		BranchCtx:         branchCtx,
 		OriginalDiffs:     diffs,
 		NoThink:           noThink,
+		ResponseMaxTokens: cfg.ResponseMaxTokens,
 		OutputStylePrompt: cfg.OutputStylePrompt,
 		ExtraBody:         cfg.ExtraBody,
 		MaxPromptBytes:    maxPromptBytes,

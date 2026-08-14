@@ -27,6 +27,7 @@ type GenerateInput struct {
 	BranchCtx         *collector.BranchContext
 	OriginalDiffs     []types.FileDiff
 	NoThink           bool
+	ResponseMaxTokens int
 	OutputStylePrompt string
 	ExtraBody         map[string]any
 	MaxPromptBytes    int
@@ -57,6 +58,11 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 	}
 
 	fmt.Fprintf(os.Stderr, "⚠ Model unavailable, using template fallback: %v\n", err)
+	if isMaxTokensError(err) {
+		fmt.Fprintf(os.Stderr, "  The provider rejected max_tokens=%d. Lower response_max_tokens in the config file used by PRlogue and retry.\n", responseMaxTokensForInput(input))
+		fmt.Fprintln(os.Stderr, "  Default config: $PRLOGUE_CONFIG_DIR/prlogue/config.yaml")
+		fmt.Fprintln(os.Stderr, "  Example: response_max_tokens: 8192")
+	}
 
 	tmpl := &TemplateGenerator{}
 	return tmpl.Generate(input), nil
@@ -65,17 +71,22 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*GenerateResult, error) {
 	prompt := buildLLMPrompt(input)
 
-	system := input.OutputStylePrompt
-	if strings.TrimSpace(system) == "" {
-		system = config.DefaultPrompt()
+	style := input.OutputStylePrompt
+	if strings.TrimSpace(style) == "" {
+		style = config.DefaultOutputStylePrompt()
 	}
+	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "### PR Description")
 
 	resp, err := g.p.Chat(ctx, provider.ChatRequest{
 		Model: g.model,
 		Messages: []provider.ChatMessage{
 			{
 				Role:    "system",
-				Content: system,
+				Content: config.DefaultPrompt(),
+			},
+			{
+				Role:    "system",
+				Content: style,
 			},
 			{
 				Role:    "system",
@@ -90,7 +101,7 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 				Content: prompt,
 			},
 		},
-		MaxTokens:   2048,
+		MaxTokens:   responseMaxTokensForInput(input),
 		Temperature: 0.3,
 		NoThink:     input.NoThink,
 		ExtraBody:   input.ExtraBody,
@@ -101,6 +112,9 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 
 	cleanOutput := sanitizeLLMOutput(resp.Content)
 	title, summary := extractLLMTitle(cleanOutput)
+	if useStandardStyle {
+		summary = normalizeLLMSummary(summary)
+	}
 	if isPlaceholderTitle(title) {
 		title = ""
 	}
@@ -114,6 +128,26 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 	}, nil
 }
 
+func responseMaxTokensForInput(input *GenerateInput) int {
+	if input.ResponseMaxTokens > 0 {
+		return input.ResponseMaxTokens
+	}
+	return config.DefaultResponseMaxTokens
+}
+
+func isMaxTokensError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{"max_tokens", "max tokens", "token limit", "maximum context", "context length"} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func extractLLMTitle(s string) (title, body string) {
 	lines := strings.SplitN(s, "\n", 2)
 	if len(lines) == 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), "Title:") {
@@ -121,7 +155,20 @@ func extractLLMTitle(s string) (title, body string) {
 		body = strings.TrimSpace(lines[1])
 		return title, body
 	}
+	if len(lines) == 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), "# ") {
+		title = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[0]), "# "))
+		body = strings.TrimSpace(lines[1])
+		return title, body
+	}
 	return "", s
+}
+
+func normalizeLLMSummary(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.Contains(s, "### PR Description") {
+		return s
+	}
+	return "### PR Description\n\n" + s
 }
 
 func buildLLMPrompt(input *GenerateInput) string {
@@ -138,7 +185,8 @@ func buildLLMPrompt(input *GenerateInput) string {
 	}
 	w := newPromptWriter(limit - len(prefix) - len(suffix) - len(truncated))
 
-	w.printf("Branch: %s (%s)\n", input.BranchCtx.CurrentBranch, input.BranchCtx.BranchType)
+	w.printf("Current branch: %s (%s)\n", input.BranchCtx.CurrentBranch, input.BranchCtx.BranchType)
+	w.printf("Default branch: %s\n", input.BranchCtx.DefaultBranch)
 	if len(input.BranchCtx.IssueRefs) > 0 {
 		w.printf("Issues: %v\n", input.BranchCtx.IssueRefs)
 	}

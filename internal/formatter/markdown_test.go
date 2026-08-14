@@ -33,8 +33,8 @@ func TestFormatMarkdown_LLMMode(t *testing.T) {
 	if !strings.Contains(output, "Added login feature") {
 		t.Error("expected summary in markdown output")
 	}
-	if !strings.Contains(output, "abc1234") {
-		t.Error("expected commit hash in markdown output")
+	if strings.Contains(output, "abc1234") {
+		t.Error("LLM markdown output must not append commit details")
 	}
 }
 

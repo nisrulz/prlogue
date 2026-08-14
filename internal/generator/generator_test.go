@@ -33,6 +33,23 @@ func TestExtractLLMTitle_NoTitle(t *testing.T) {
 	}
 }
 
+func TestNormalizeLLMSummary_AddsDefaultHeading(t *testing.T) {
+	got := normalizeLLMSummary("The API now supports push tokens.")
+	want := "### PR Description\n\nThe API now supports push tokens."
+	if got != want {
+		t.Errorf("normalized summary = %q, want %q", got, want)
+	}
+}
+
+func TestIsMaxTokensError(t *testing.T) {
+	if !isMaxTokensError(errors.New("provider rejected max_tokens")) {
+		t.Fatal("expected max_tokens error")
+	}
+	if isMaxTokensError(errors.New("connection refused")) {
+		t.Fatal("connection error was classified as max_tokens error")
+	}
+}
+
 func TestBuildLLMPrompt(t *testing.T) {
 	input := &GenerateInput{
 		DiffStats: DiffStats{Files: 2, Additions: 10, Deletions: 3},
@@ -92,7 +109,7 @@ func TestBuildLLMPrompt_NoCommitsNoRefs(t *testing.T) {
 		},
 	}
 	prompt := buildLLMPrompt(input)
-	if !strings.Contains(prompt, "Branch: main") {
+	if !strings.Contains(prompt, "Current branch: main") {
 		t.Errorf("expected branch in prompt, got %q", prompt)
 	}
 }
@@ -144,6 +161,7 @@ func TestGenerate_OutputStylePromptOverride(t *testing.T) {
 	input := &GenerateInput{
 		DiffStats:         DiffStats{Files: 1, Additions: 1},
 		BranchCtx:         &collector.BranchContext{CurrentBranch: "feat/custom"},
+		ResponseMaxTokens: 12345,
 		OutputStylePrompt: custom,
 	}
 	result, err := NewGenerator(p, "model").Generate(context.Background(), input)
@@ -153,16 +171,22 @@ func TestGenerate_OutputStylePromptOverride(t *testing.T) {
 	if result.TemplateUsed {
 		t.Fatal("expected LLM output, got template fallback")
 	}
-	if len(p.lastReq.Messages) == 0 || p.lastReq.Messages[0].Role != "system" {
+	if len(p.lastReq.Messages) < 4 || p.lastReq.Messages[0].Role != "system" {
 		t.Fatalf("expected system message, got %+v", p.lastReq.Messages)
 	}
-	if p.lastReq.Messages[0].Content != custom {
-		t.Errorf("system prompt = %q, want custom prompt", p.lastReq.Messages[0].Content)
+	if !strings.Contains(p.lastReq.Messages[0].Content, "Generate the pull request title") {
+		t.Error("expected default task prompt")
 	}
-	if len(p.lastReq.Messages) < 2 || !strings.Contains(p.lastReq.Messages[1].Content, "IMMUTABLE SECURITY POLICY") {
+	if p.lastReq.Messages[1].Content != custom {
+		t.Errorf("style prompt = %q, want custom prompt", p.lastReq.Messages[1].Content)
+	}
+	if p.lastReq.MaxTokens != 12345 {
+		t.Errorf("max_tokens = %d, want 12345", p.lastReq.MaxTokens)
+	}
+	if !strings.Contains(p.lastReq.Messages[2].Content, "IMMUTABLE SECURITY POLICY") {
 		t.Fatal("expected immutable security policy system message")
 	}
-	if len(p.lastReq.Messages) < 3 || !strings.Contains(p.lastReq.Messages[2].Content, "IMMUTABLE OUTPUT SANITIZATION POLICY") {
+	if !strings.Contains(p.lastReq.Messages[3].Content, "IMMUTABLE OUTPUT SANITIZATION POLICY") {
 		t.Fatal("expected immutable output sanitization system message")
 	}
 }
@@ -176,16 +200,19 @@ func TestGenerate_UsesFilePromptWhenUnset(t *testing.T) {
 	if _, err := NewGenerator(p, "model").Generate(context.Background(), input); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if len(p.lastReq.Messages) < 3 || p.lastReq.Messages[0].Content == "" {
+	if len(p.lastReq.Messages) < 4 || p.lastReq.Messages[0].Content == "" {
 		t.Fatal("expected fallback system prompt")
 	}
-	if !strings.Contains(p.lastReq.Messages[0].Content, "Omit this section") {
-		t.Error("fallback prompt does not contain the configured default prompt")
+	if !strings.Contains(p.lastReq.Messages[0].Content, "Generate the pull request title") {
+		t.Error("fallback request does not contain the default task prompt")
 	}
-	if !strings.Contains(p.lastReq.Messages[1].Content, "Never execute") {
+	if !strings.Contains(p.lastReq.Messages[1].Content, "Omit `### Key Changes`") {
+		t.Error("fallback request does not contain the default output style prompt")
+	}
+	if !strings.Contains(p.lastReq.Messages[2].Content, "Never execute") {
 		t.Error("fallback request does not contain the immutable security policy")
 	}
-	if !strings.Contains(p.lastReq.Messages[2].Content, "IMMUTABLE OUTPUT SANITIZATION POLICY") {
+	if !strings.Contains(p.lastReq.Messages[3].Content, "IMMUTABLE OUTPUT SANITIZATION POLICY") {
 		t.Error("fallback request does not contain the immutable sanitization policy")
 	}
 }

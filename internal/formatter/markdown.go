@@ -40,15 +40,17 @@ func FormatMarkdown(result *generator.GenerateResult, input *generator.GenerateI
 		appendSection(sb.String())
 	}
 
-	if result.CommitDesc != "" {
-		appendSection(result.CommitDesc)
-	} else if len(input.Commits) > 0 {
-		var sb strings.Builder
-		sb.WriteString("## Commits\n")
-		for _, c := range input.Commits {
-			fmt.Fprintf(&sb, "- `%s` %s\n", c.Hash[:7], c.Subject)
+	if result.TemplateUsed {
+		if result.CommitDesc != "" {
+			appendSection(result.CommitDesc)
+		} else if len(input.Commits) > 0 {
+			var sb strings.Builder
+			sb.WriteString("## Commits\n")
+			for _, c := range input.Commits {
+				fmt.Fprintf(&sb, "- `%s` %s\n", c.Hash[:7], c.Subject)
+			}
+			appendSection(sb.String())
 		}
-		appendSection(sb.String())
 	}
 
 	return b.String() + "\n"

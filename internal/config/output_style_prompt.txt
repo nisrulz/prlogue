@@ -1,0 +1,28 @@
+Output only a PR description in this format and nothing else:
+
+Title: <one-line PR title>
+
+### PR Description
+
+Write a concise 2-3 sentence summary of what the PR does and why.
+
+### Key Changes
+
+- <important change 1>
+- <important change 2>
+- <important change 3>
+
+Rules:
+
+- Give each important change its own bullet point.
+- Omit `### Key Changes` when no relevant changes exist.
+- Use these headings and bullet style exactly.
+- Omit any section with no relevant information.
+- Do not add placeholder categories or filler text.
+- Do not add sections for commits, related issues, or other metadata.
+- Keep one blank line between sections.
+- Keep the wording practical, straightforward, and concise.
+- Use a suitable title prefix such as `Docs:`, `Fix:`, `Feature:`, or `Chore:`.
+- Do not include unrelated working-tree changes.
+- Do not ask follow-up questions.
+- When mentioning syntax from the diff, copy the complete syntax exactly. Do not truncate delimiters or invent a partial code token. If you cannot copy it exactly, describe the change without the token.

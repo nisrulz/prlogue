@@ -22,16 +22,23 @@ const (
 	maxConfigBytes    = 1 << 20
 	maxProjectBytes   = 64 << 10
 	maxOutputStyleLen = 1 << 16
+	maxResponseTokens = 1 << 20
 	configDirEnv      = "PRLOGUE_CONFIG_DIR"
 )
 
 const openAICompatProvider = "openai_compat"
 
-//go:embed default_prompt.txt security_prompt.txt sanitization_prompt.txt
+const DefaultResponseMaxTokens = 8192
+
+//go:embed default_prompt.txt output_style_prompt.txt security_prompt.txt sanitization_prompt.txt
 var promptFiles embed.FS
 
 func DefaultPrompt() string {
 	return readPromptFile("default_prompt.txt")
+}
+
+func DefaultOutputStylePrompt() string {
+	return readPromptFile("output_style_prompt.txt")
 }
 
 func SecurityPrompt() string {
@@ -55,6 +62,7 @@ type Config struct {
 	Provider          string         `mapstructure:"provider"`
 	Model             string         `mapstructure:"model"`
 	BaseURL           string         `mapstructure:"base_url"`
+	ResponseMaxTokens int            `mapstructure:"response_max_tokens"`
 	APIKey            string         `mapstructure:"-"`
 	NoThink           bool           `mapstructure:"no_think"`
 	OutputStylePrompt string         `mapstructure:"output_style_prompt"`
@@ -114,16 +122,17 @@ func (c *Config) ContextLengthWithRAM(ram *sysinfo.RAMInfo) int {
 }
 
 // DefaultConfig returns the initial configuration written to disk on first
-// run. After that the config file is the source of truth; the CLI applies no
-// defaults at load time.
+// run. After that the config file is the source of truth. The loader fills in
+// response_max_tokens for older files that do not contain the setting.
 func DefaultConfig() *Config {
 	return &Config{
 		Name:              "Ollama",
 		Provider:          openAICompatProvider,
 		Model:             "lfm2.5:8b",
 		BaseURL:           "http://localhost:11434/v1",
+		ResponseMaxTokens: DefaultResponseMaxTokens,
 		NoThink:           true,
-		OutputStylePrompt: DefaultPrompt(),
+		OutputStylePrompt: DefaultOutputStylePrompt(),
 		Context: ContextConf{
 			Mode:    "auto",
 			Manual:  131072,
@@ -143,7 +152,7 @@ func DefaultConfig() *Config {
 // Load reads trusted user configuration. An explicit --config path is trusted.
 // Without it, the user config is loaded from $PRLOGUE_CONFIG_DIR/prlogue/config.yaml
 // (or ~/.config/prlogue/config.yaml when the env var is unset). If that file
-// does not exist yet, it is created on first run with DefaultConfig and the
+// does not exist yet, it is created on first run with DefaultConfig. The
 // current repository may override only git.default_branch and output.format.
 func Load(path string) (*Config, error) {
 	return load(path, true)
@@ -176,6 +185,9 @@ func load(path string, allowProjectOverrides bool) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	if !v.IsSet("response_max_tokens") {
+		cfg.ResponseMaxTokens = DefaultResponseMaxTokens
 	}
 
 	if path == "" && allowProjectOverrides {
@@ -289,6 +301,9 @@ func (c *Config) Validate() error {
 	}
 	if err := ValidateBaseURL(c.BaseURL); err != nil {
 		return err
+	}
+	if c.ResponseMaxTokens < DefaultResponseMaxTokens || c.ResponseMaxTokens > maxResponseTokens {
+		return fmt.Errorf("response_max_tokens must be between %d and %d", DefaultResponseMaxTokens, maxResponseTokens)
 	}
 	if c.Context.Mode != "auto" && c.Context.Mode != "manual" {
 		return fmt.Errorf("context.mode must be 'auto' or 'manual'")
@@ -406,6 +421,7 @@ func Save(cfg *Config, path string) (string, error) {
 	v.Set("provider", cfg.Provider)
 	v.Set("model", cfg.Model)
 	v.Set("base_url", cfg.BaseURL)
+	v.Set("response_max_tokens", cfg.ResponseMaxTokens)
 	v.Set("no_think", cfg.NoThink)
 	v.Set("output_style_prompt", cfg.OutputStylePrompt)
 	v.Set("context.mode", cfg.Context.Mode)
