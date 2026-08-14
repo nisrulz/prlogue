@@ -4,7 +4,7 @@
 
 ![Header](img/github_banner.png)
 
-PRlogue turns commits and diffs into PR descriptions. It is local first and offline by default, so your Git data stays on your machine. Use Ollama or any OpenAI-compatible server.
+PRlogue turns commits and diffs into PR descriptions. It runs locally by default, so your Git data stays on your machine. Use Ollama or any OpenAI-compatible server.
 
 ## Quick start
 

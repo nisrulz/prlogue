@@ -2,13 +2,15 @@
 
 ## Unit tests
 
-Unit tests live next to the code they test. Tests that only need the exported API use an external package (`package foo_test`), so they can only reach the public surface. Tests that exercise unexported behavior stay in-package (`package foo`). Both kinds live in the same directory.
+Unit tests live next to the code they test. Tests that need only the exported API use an external package such as `package foo_test`. Tests for unexported behavior stay in the package, such as `package foo`.
+
+Both test types live in the same directory.
 
 ```bash
 make test
 ```
 
-`make test` uses `-count=1`, so it never serves you a cached result.
+`make test` uses `-count=1`, so Go does not use cached results.
 
 ## End-to-end tests
 
@@ -38,17 +40,16 @@ The scenarios cover the awkward cases:
 - Special characters in the diff
 - Large diffs that force chunking
 
-The suite requires Ollama with the default model (`lfm2.5:8b`) when run
-locally. Start Ollama and pull the model before you run `make test-live`.
+Local runs need Ollama with the default model (`lfm2.5:8b`). Start Ollama and
+pull the model before you run `make test-live`.
 
 CI sets `PRLOGUE_LIVE_TEST_PROVIDER=mock`. This starts an in-process
-OpenAI-compatible mock server (`httptest`) for the end-to-end tests, so the
-suite needs no live model server and no external binary. Do not set this
-variable locally when you want to test against Ollama.
+OpenAI-compatible mock server with `httptest`. The suite then needs no live
+model server or external binary. Do not set this variable when testing Ollama.
 
 ## Test the fallback
 
-The template fallback is covered by an OpenAI-compatible client stub in unit tests. To see it from the binary, point PRlogue at an unused local endpoint by editing the config:
+Unit tests cover the template fallback with an OpenAI-compatible client stub. To test it from the binary, point PRlogue at an unused local endpoint:
 
 ```bash
 # edit $PRLOGUE_CONFIG_DIR/prlogue/config.yaml
@@ -59,4 +60,4 @@ base_url: http://127.0.0.1:65535/v1
 prlogue generate -v
 ```
 
-The command prints a warning and returns a template description. It needs no live model server.
+The command prints a warning and returns a template description. It does not need a live model server.

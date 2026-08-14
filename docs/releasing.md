@@ -4,9 +4,9 @@ PRlogue uses GoReleaser to build binaries for Linux, macOS, and Windows.
 
 ## Before tagging
 
-You need write access to the repository and GoReleaser if you want to test the package locally.
+You need repository write access and GoReleaser to test the package locally.
 
-Run the same checks as CI:
+Run the checks that CI runs:
 
 ```bash
 make audit
@@ -24,7 +24,7 @@ GoReleaser writes snapshot artifacts to `dist/`.
 
 ## Create a release
 
-Tag the commit and push the tag:
+Create and push a version tag:
 
 ```bash
 git tag v0.1.0

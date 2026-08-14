@@ -21,7 +21,7 @@ ollama pull lfm2.5:8b
 ollama serve
 ```
 
-Now run `doctor`. It checks the config, endpoint, model, and Git repository. Fix any failed check before you generate the description:
+Run `doctor` next. It checks the config, endpoint, model, and Git repository. Fix any failed check before you generate a description:
 
 ```bash
 prlogue doctor
@@ -42,9 +42,9 @@ prlogue generate --publish
 
 ## Use another model server
 
-PRlogue accepts any server that implements the OpenAI chat API. Set `provider`, `base_url`, and `model` in the user config. The `name` value is only a label shown by `init`, `doctor`, and `config`.
+PRlogue accepts any server that implements the OpenAI chat API. Set `provider`, `base_url`, and `model` in the user config. The `name` value is a label for `init`, `doctor`, and `config` output.
 
-Common settings:
+Here are common settings:
 
 | Server | `name` | `base_url` | Example `model` |
 | --- | --- | --- | --- |
@@ -94,17 +94,21 @@ PRlogue reads API keys from `PRLOGUE_OPENAI_COMPAT_API_KEY` only. Config files c
 | `--quiet` | `-q` | `false` | Suppresses the startup banner |
 | `--config` | | user config | Loads an explicit trusted config file |
 
-Everything else is set in the config file. Commands reject unexpected positional arguments. Branch values must be valid git branch names, not revision expressions such as `HEAD~10`.
+Set all other options in the config file. Commands reject unexpected positional arguments. Branch values must be valid Git branch names, not revision expressions such as `HEAD~10`.
 
 ## OpenAI-compatible endpoint
 
 Set `provider` to `openai_compat`, then set `base_url` and `model` for the server you use.
 
+`response_max_tokens` sets the response limit for PR generation. It defaults to `8192`.
+You can set it from `8192` to `1048576`.
+Choose a lower value when your provider has a smaller limit, but keep it at least `8192`.
+
 PRlogue accepts plain HTTP only for `localhost` and loopback IP addresses. Remote endpoints must use HTTPS, and HTTP redirects are not followed.
 
 ## User config
 
-PRlogue stores user config at `$PRLOGUE_CONFIG_DIR/prlogue/config.yaml`. `PRLOGUE_CONFIG_DIR` defaults to `~/.config`. The first run creates the directory and the config file. After that, the file is the source of truth. The CLI does not apply defaults when it loads the file.
+PRlogue stores user config at `$PRLOGUE_CONFIG_DIR/prlogue/config.yaml`. `PRLOGUE_CONFIG_DIR` defaults to `~/.config`. The first run creates the directory and the config file. After that, the file is the source of truth. Older files without `response_max_tokens` use the default value of `8192`.
 
 The generated config looks like this:
 
@@ -113,6 +117,7 @@ name: Ollama                           # optional label shown in CLI output
 provider: openai_compat                # required provider type
 model: lfm2.5:8b                       # required model name
 base_url: http://localhost:11434/v1    # required OpenAI-compatible endpoint
+response_max_tokens: 8192              # maximum response tokens sent to the provider
 no_think: true                         # optional, defaults to false when omitted
 output_style_prompt: |                 # optional, uses the bundled format prompt when empty
   Output only a PR description in this format and nothing else:
@@ -120,13 +125,16 @@ output_style_prompt: |                 # optional, uses the bundled format promp
   Title: <one-line PR title>
 
   ### PR Description
-  Write a 2-3 sentence summary of what the PR does and why.
+  Write a concise 2-3 sentence summary of what the PR does and why.
 
   ### Key Changes
-  Use a bullet list for relevant changes. Omit this section if there are no relevant changes.
+  - <important change 1>
+  - <important change 2>
+  - <important change 3>
 
-  Use the configured headings and bullet style. Omit any section that has no relevant information. Do not add placeholder categories or filler text.
-  Keep one blank line between sections. When you mention syntax from the diff, copy the complete syntax exactly. Do not truncate delimiters or invent a partial code token. If you cannot copy it exactly, describe the change without the token.
+  Omit `### Key Changes` when no relevant changes exist. Use these headings and bullet style exactly.
+  Do not add placeholder categories, filler text, commits, related issues, or other metadata.
+  Keep one blank line between sections. Copy complete syntax from the diff, or describe it without the syntax.
 extra_body: {}                         # optional provider-specific request fields
 
 context:                               # required context settings
@@ -151,7 +159,7 @@ system:                                # optional
   model_size_gb: 5.2                   # optional model size used for context sizing
 ```
 
-The generated config contains the bundled fallback format prompt in `output_style_prompt`. PRlogue keeps the security and sanitization prompts outside the config file.
+The generated config includes the bundled format prompt in `output_style_prompt`. PRlogue keeps the task, security, and sanitization prompts outside the config file.
 
 An explicit `--config <path>` is treated as trusted user config. PRlogue validates the whole file before doing any work.
 
@@ -167,7 +175,9 @@ Check the current value with `prlogue config get name`.
 
 ## Output style prompt
 
-The bundled output style prompt defines the `Title:` and `### PR Description` format. Set `output_style_prompt` to change the format or presentation. PRlogue sends branch, issue, commit, and diff data in a separate user message.
+The embedded task prompt tells the model how to review the collected repository data. The bundled output style prompt defines the `Title:` and `### PR Description` format. Set `output_style_prompt` to change the format or presentation.
+
+PRlogue sends the branch, issue, commit, and diff data in a separate user message.
 
 PRlogue sends the output style prompt as a system message. The value has a 64 KiB limit. PRlogue adds immutable security and sanitization policies after it. The configured prompt cannot change those policies.
 
@@ -189,6 +199,8 @@ output_style_prompt: ""
 ```
 
 Check the current value with `prlogue config get output_style_prompt`. `prlogue config` prints whether it is set.
+
+If a provider rejects the response limit, lower `response_max_tokens` in the config file and run `prlogue generate` again.
 
 ### Repository config
 
@@ -213,7 +225,9 @@ extra_body:
     enable_thinking: false
 ```
 
-It cannot replace `model`, `messages`, `max_tokens`, `temperature`, or `stream`. Those fields are owned by PRlogue. The immutable security and sanitization policies are also not configurable.
+`extra_body` cannot override the API fields `model`, `messages`, `max_tokens`, `temperature`, or `stream`.
+Set the response limit with `response_max_tokens`.
+PRlogue owns the other request fields. The immutable security and sanitization policies are also not configurable.
 
 ## Config commands
 
@@ -272,7 +286,7 @@ It checks the setup:
 - whether the model responds to a test request
 - the repo's `.prlogue.yaml` and the git work tree
 
-The test request sends "Hi" and gives the model your full configured context as its token budget. That leaves thinking models room to finish their `<think>` block before answering.
+The test request sends "Hi" and gives the model your full configured context as its token budget. Thinking models can use that space to finish their `<think>` block before they answer.
 
 Pass `--config` to check an explicit config file instead of the user config.
 
@@ -280,7 +294,7 @@ Every check prints `✔` for a pass, `⚠` for a warning, and `✗` for a proble
 
 ## Context and input limits
 
-Auto mode estimates a context size from available RAM and the configured model size. Manual mode uses `context.manual`.
+Auto mode estimates the context size from available RAM and the configured model size. Manual mode uses `context.manual`.
 
 The resolved context size controls how much repository data PRlogue includes in the request. The repository-data prompt is capped at 1 MiB and always keeps the closing untrusted-data marker. The output style prompt is capped at 64 KiB. Git diff collection stops at 8 MiB. Larger diffs return a clear error instead of exhausting memory.
 
@@ -302,12 +316,12 @@ Publishing requires the [GitHub CLI](https://cli.github.com/) and an authenticat
 
 ## Pipeline
 
-1. Resolve and validate trusted config.
+1. Resolve and validate the trusted config.
 2. Detect the base branch and collect up to 50 commits.
-3. Read a bounded git diff with external diff drivers disabled.
+3. Read a bounded Git diff with external diff drivers disabled.
 4. Classify and chunk changes locally for JSON and template output.
 5. Send one bounded request to the selected model.
-6. Fall back to the local template if the server is unavailable.
+6. Use the local template if the server is unavailable.
 7. Format the result as Markdown or JSON, then publish only when requested.
 
 The normal path makes one model call.

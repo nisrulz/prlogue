@@ -20,7 +20,7 @@ graph LR
 |---|---|
 | `cmd/generate.go` | Full pipeline orchestration |
 | `cmd/init.go` | Config scaffold + setup instructions |
-| `cmd/config_cmd.go` | Config viewer/setter |
+| `cmd/config_cmd.go` | Config viewer |
 | `cmd/reset_config.go` | Timestamped config backup and reset |
 | `cmd/root.go` | Cobra root command and global flags |
 | `internal/processor/chunker.go` | Two-tier file/hunk chunking |
@@ -39,7 +39,8 @@ graph LR
 | `internal/collector/context.go` | Branch + issue refs |
 | `internal/sysinfo/memory.go` | RAM detection + LMS integration |
 | `internal/config/config.go` | Trusted config, provider profiles, validation, and auto context |
-| `internal/config/default_prompt.txt` | User-configurable output format fallback |
+| `internal/config/default_prompt.txt` | Embedded PR analysis task prompt |
+| `internal/config/output_style_prompt.txt` | User-configurable output format fallback |
 | `internal/config/security_prompt.txt` | Immutable security system prompt |
 | `internal/config/sanitization_prompt.txt` | Immutable output sanitization system prompt |
 | `internal/types/types.go` | Shared types + helpers |
@@ -75,8 +76,10 @@ mock server.
 The default config file is `$PRLOGUE_CONFIG_DIR/prlogue/config.yaml`. When
 `PRLOGUE_CONFIG_DIR` is not set, it is `~/.config/prlogue/config.yaml`.
 
-The user-configurable field is `output_style_prompt`. It controls output format
-only. Security and sanitization prompts are embedded and cannot be configured.
+The user-configurable fields include `response_max_tokens` and `output_style_prompt`.
+Set `response_max_tokens` from `8192` to `1048576`.
+The task, security, and sanitization prompts are embedded and cannot be
+configured.
 `reset-config` backs up the current config as `config.yaml.<UTC timestamp>.bak`
 before it writes a new default config.
 

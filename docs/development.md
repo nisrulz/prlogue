@@ -13,13 +13,13 @@ make audit       # race detector, vet, govulncheck
 
 Run `make audit` before opening a PR. It runs the race detector, `go vet`, and `govulncheck`.
 
-Building from source instead of using the installer:
+To build and install from source:
 
 ```bash
 make install
 ```
 
-That copies the binary to `~/go/bin`.
+The command copies the binary to `~/go/bin`.
 
 ## Project conventions
 
