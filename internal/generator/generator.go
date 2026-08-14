@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,11 +27,15 @@ type GenerateInput struct {
 	Merged            []types.MergedSummary
 	BranchCtx         *collector.BranchContext
 	OriginalDiffs     []types.FileDiff
+	CommitSummaries   []types.CommitSummary
 	NoThink           bool
 	ResponseMaxTokens int
 	OutputStylePrompt string
 	ExtraBody         map[string]any
 	MaxPromptBytes    int
+	// StagedContext delivers each prompt block in its own API call. When
+	// false, all blocks are sent in one call.
+	StagedContext bool
 }
 
 type GenerateResult struct {
@@ -47,6 +52,33 @@ type Generator struct {
 	model string
 }
 
+var errInvalidLLMOutput = errors.New("invalid PR description from model")
+
+const (
+	maxLLMOutputBytes = 16 << 10
+	maxLLMOutputLines = 160
+
+	// ackMaxTokens caps each intermediate context-injection call. Those calls
+	// only ask the model to acknowledge a block so it is absorbed into its
+	// context; the final call does the generation.
+	ackMaxTokens = 256
+)
+
+const (
+	// contextAckInstruction tells the model to hold the final output until
+	// every context block has been supplied. It must not discourage reading
+	// the block: the model needs to absorb the content now, not defer it.
+	contextAckInstruction = "Read and store the context above for later use. Do not write the PR title or description yet. Reply with exactly: ACK"
+	// contextAckResponse is the fixed assistant reply stored after each
+	// context block. It is fixed so untrusted model output never becomes part
+	// of the following conversation.
+	contextAckResponse = "ACK"
+	// generateInstruction releases the collected context for the final call.
+	// It names the delivered blocks so the model reads the repository data and
+	// explicitly forbids the ack token so it does not echo the hold response.
+	generateInstruction = "FINAL REQUEST: use the security policy, the output sanitization policy, the output style, and the repository data supplied above to generate the PR title and description now. Do not reply with an acknowledgment such as ACK or OK."
+)
+
 func NewGenerator(p provider.Provider, model string) *Generator {
 	return &Generator{p: p, model: model}
 }
@@ -57,7 +89,11 @@ func (g *Generator) Generate(ctx context.Context, input *GenerateInput) (*Genera
 		return result, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "⚠ Model unavailable, using template fallback: %v\n", err)
+	if errors.Is(err, errInvalidLLMOutput) {
+		fmt.Fprintf(os.Stderr, "⚠ Model returned an invalid PR description, using template fallback: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "⚠ Model unavailable, using template fallback: %v\n", err)
+	}
 	if isMaxTokensError(err) {
 		fmt.Fprintf(os.Stderr, "  The provider rejected max_tokens=%d. Lower response_max_tokens in the config file used by PRlogue and retry.\n", responseMaxTokensForInput(input))
 		fmt.Fprintln(os.Stderr, "  Default config: $PRLOGUE_CONFIG_DIR/prlogue/config.yaml")
@@ -73,44 +109,14 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 
 	style := input.OutputStylePrompt
 	if strings.TrimSpace(style) == "" {
-		style = config.DefaultOutputStylePrompt()
+		style = config.LoadOutputStylePrompt()
 	}
 	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "### PR Description")
 
-	resp, err := g.p.Chat(ctx, provider.ChatRequest{
-		Model: g.model,
-		Messages: []provider.ChatMessage{
-			{
-				Role:    "system",
-				Content: config.DefaultPrompt(),
-			},
-			{
-				Role:    "system",
-				Content: style,
-			},
-			{
-				Role:    "system",
-				Content: config.SecurityPrompt(),
-			},
-			{
-				Role:    "system",
-				Content: config.SanitizationPrompt(),
-			},
-			{
-				Role:    "user",
-				Content: prompt,
-			},
-		},
-		MaxTokens:   responseMaxTokensForInput(input),
-		Temperature: 0.3,
-		NoThink:     input.NoThink,
-		ExtraBody:   input.ExtraBody,
-	})
+	cleanOutput, err := g.generateWithDefense(ctx, input, prompt, style)
 	if err != nil {
-		return nil, fmt.Errorf("generate LLM: %w", err)
+		return nil, err
 	}
-
-	cleanOutput := sanitizeLLMOutput(resp.Content)
 	title, summary := extractLLMTitle(cleanOutput)
 	if useStandardStyle {
 		summary = normalizeLLMSummary(summary)
@@ -126,6 +132,218 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 		Summary: summary,
 		Raw:     cleanOutput,
 	}, nil
+}
+
+// generateWithDefense delivers the prompt context to the model, validates the
+// output, and retries once with a data-pointing instruction before failing.
+func (g *Generator) generateWithDefense(ctx context.Context, input *GenerateInput, prompt, style string) (string, error) {
+	messages, err := g.deliverContext(ctx, input, prompt, style)
+	if err != nil {
+		return "", err
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err := g.p.Chat(ctx, provider.ChatRequest{
+			Model:       g.model,
+			Messages:    messages,
+			MaxTokens:   responseMaxTokensForInput(input),
+			Temperature: 0,
+			NoThink:     input.NoThink,
+			ExtraBody:   input.ExtraBody,
+		})
+		if err != nil {
+			return "", fmt.Errorf("generate LLM: %w", err)
+		}
+		cleanOutput := sanitizeLLMOutput(resp.Content)
+		reason := outputRejectionReason(input, cleanOutput)
+		if reason == "" {
+			return cleanOutput, nil
+		}
+		if attempt == 0 {
+			messages = append(messages, provider.ChatMessage{Role: "user", Content: buildRetryInstruction(input, reason)})
+			continue
+		}
+		return "", fmt.Errorf("%w: %s", errInvalidLLMOutput, reason)
+	}
+	return "", fmt.Errorf("%w: output failed PR description validation", errInvalidLLMOutput)
+}
+
+// deliverContext prepares the conversation. In staged mode every context block
+// is delivered in its own API call and the model holds its output until the
+// final request. Otherwise the blocks are sent in one call.
+func (g *Generator) deliverContext(ctx context.Context, input *GenerateInput, prompt, style string) ([]provider.ChatMessage, error) {
+	if !input.StagedContext {
+		return []provider.ChatMessage{
+			{Role: "system", Content: config.DefaultPrompt()},
+			{Role: "system", Content: style},
+			{Role: "system", Content: config.SecurityPrompt()},
+			{Role: "system", Content: config.SanitizationPrompt()},
+			{Role: "user", Content: prompt},
+		}, nil
+	}
+
+	messages := make([]provider.ChatMessage, 0, 16)
+	var err error
+	if messages, err = g.injectContext(ctx, input, messages, "system", config.SecurityPrompt()); err != nil {
+		return nil, err
+	}
+	if messages, err = g.injectContext(ctx, input, messages, "system", config.SanitizationPrompt()); err != nil {
+		return nil, err
+	}
+	if messages, err = g.injectContext(ctx, input, messages, "system", style); err != nil {
+		return nil, err
+	}
+	if messages, err = g.injectContext(ctx, input, messages, "user", prompt); err != nil {
+		return nil, err
+	}
+	return append(messages, provider.ChatMessage{Role: "user", Content: generateInstruction + "\n\n" + config.DefaultPrompt()}), nil
+}
+
+// injectContext appends one context block, tells the model to hold its output,
+// and records a short acknowledgement. Each injection is one API call so the
+// model only processes one block per call and accumulates them in context.
+func (g *Generator) injectContext(ctx context.Context, input *GenerateInput, messages []provider.ChatMessage, role, content string) ([]provider.ChatMessage, error) {
+	messages = append(messages, provider.ChatMessage{Role: role, Content: content})
+	messages = append(messages, provider.ChatMessage{Role: "user", Content: contextAckInstruction})
+	if _, err := g.p.Chat(ctx, provider.ChatRequest{
+		Model:       g.model,
+		Messages:    messages,
+		MaxTokens:   ackMaxTokens,
+		Temperature: 0,
+		NoThink:     input.NoThink,
+		ExtraBody:   input.ExtraBody,
+	}); err != nil {
+		return nil, fmt.Errorf("inject context: %w", err)
+	}
+	return append(messages, provider.ChatMessage{Role: "assistant", Content: contextAckResponse}), nil
+}
+
+// outputRejectionReason explains why the model output is unusable, or returns
+// an empty string when the output is accepted.
+func outputRejectionReason(input *GenerateInput, s string) string {
+	if !isUsableLLMOutput(s) {
+		return "output failed PR description validation"
+	}
+	if isAckOnlyOutput(s) {
+		return "model echoed an acknowledgment instead of generating"
+	}
+	if isRefusalOutput(s) {
+		return "model refused to summarize the changes"
+	}
+	if input.DiffStats.Files > 0 && claimsNoChanges(s) {
+		return "model reported no changes despite repository data"
+	}
+	return ""
+}
+
+// buildRetryInstruction points the model back at the repository data and the
+// collected statistics after a rejected output.
+func buildRetryInstruction(input *GenerateInput, reason string) string {
+	return fmt.Sprintf(
+		"Your previous reply was rejected: %s. The repository data above contains %d changed file(s) with +%d/-%d lines and %d commit(s). Read the diff and the commit list in the repository data above. Generate the PR title and description from that data. Do not claim there are no changes and do not reply with an acknowledgment.",
+		reason, input.DiffStats.Files, input.DiffStats.Additions, input.DiffStats.Deletions, len(input.Commits))
+}
+
+// stripTitleAndHeadings returns the body of a model reply with title lines and
+// Markdown headings removed, so rejection checks test only the content.
+func stripTitleAndHeadings(s string) string {
+	lines := strings.Split(s, "\n")
+	body := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(strings.ToLower(trimmed), "title:") {
+			continue
+		}
+		body = append(body, trimmed)
+	}
+	return strings.Join(body, " ")
+}
+
+// isAckOnlyOutput reports whether the model echoed an acknowledgment token
+// instead of producing a PR title and description.
+func isAckOnlyOutput(s string) bool {
+	normalized := strings.ToLower(stripTitleAndHeadings(s))
+	if normalized == "" {
+		return false
+	}
+	for _, ack := range []string{"ok", "ack", "received", "done", "understood", "got it", "acknowledged", "yes", "y"} {
+		if normalized == ack {
+			return true
+		}
+	}
+	return false
+}
+
+// claimsNoChanges reports whether the model claimed the repository has no
+// changes or that it lacks the data to summarize any.
+func claimsNoChanges(s string) bool {
+	body := strings.ToLower(stripTitleAndHeadings(s))
+	for _, phrase := range []string{
+		"no changes were identified",
+		"no changes identified",
+		"no changes found",
+		"no changes to summarize",
+		"unable to determine changes",
+		"cannot determine changes",
+		"nothing to report",
+		"nothing to summarize",
+		"no commit history",
+		"cannot find any changes",
+		"could not find any changes",
+	} {
+		if strings.Contains(body, phrase) {
+			return true
+		}
+	}
+	if strings.Contains(body, "does not contain sufficient") && (strings.Contains(body, "commit") || strings.Contains(body, "diff")) {
+		return true
+	}
+	if strings.Contains(body, "insufficient") && (strings.Contains(body, "commit") || strings.Contains(body, "diff") || strings.Contains(body, "history") || strings.Contains(body, "information")) {
+		return true
+	}
+	return false
+}
+
+// isRefusalOutput reports whether the model declined to summarize the changes.
+func isRefusalOutput(s string) bool {
+	body := strings.ToLower(stripTitleAndHeadings(s))
+	for _, phrase := range []string{
+		"as an ai",
+		"as an llm",
+		"as a language model",
+		"i cannot",
+		"i can't",
+		"i am unable",
+		"i'm unable",
+		"i am not able",
+		"i'm not able",
+		"cannot help",
+		"cannot assist",
+		"unable to assist",
+		"cannot provide",
+		"cannot generate",
+	} {
+		if strings.Contains(body, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func isUsableLLMOutput(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || len(s) > maxLLMOutputBytes || strings.Count(s, "\n")+1 > maxLLMOutputLines {
+		return false
+	}
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "diff --git ") ||
+			strings.HasPrefix(trimmed, "--- a/") ||
+			strings.HasPrefix(trimmed, "+++ b/") ||
+			strings.HasPrefix(trimmed, "@@ ") {
+			return false
+		}
+	}
+	return true
 }
 
 func responseMaxTokensForInput(input *GenerateInput) int {
@@ -192,31 +410,36 @@ func buildLLMPrompt(input *GenerateInput) string {
 	}
 	w.printf("Stats: %d files, +%d/-%d\n\n", input.DiffStats.Files, input.DiffStats.Additions, input.DiffStats.Deletions)
 
-	if len(input.Commits) > 0 {
-		w.write("Commits:\n")
-		for _, c := range input.Commits {
-			w.printf("- %s\n", c.Subject)
-		}
+	if len(input.CommitSummaries) > 0 {
+		w.write(renderCommitSummaries(input.CommitSummaries))
 		w.write("\n")
-	}
-
-	if len(input.OriginalDiffs) > 0 {
-		w.write("Diff:\n")
-		for _, f := range input.OriginalDiffs {
-			w.printf("--- a/%s\n+++ b/%s\n", f.Path, f.Path)
-			for _, h := range f.Hunks {
-				lines := strings.Split(h.Content, "\n")
-				if len(lines) > 200 {
-					lines = append(lines[:200:200], "... (truncated)")
-				}
-				for _, l := range lines {
-					if len(l) > 500 {
-						l = truncateUTF8(l, 500) + "..."
-					}
-					w.write(l + "\n")
-				}
+	} else {
+		if len(input.Commits) > 0 {
+			w.write("Commits:\n")
+			for _, c := range input.Commits {
+				w.printf("- %s\n", c.Subject)
 			}
 			w.write("\n")
+		}
+
+		if len(input.OriginalDiffs) > 0 {
+			w.write("Diff:\n")
+			for _, f := range input.OriginalDiffs {
+				w.printf("--- a/%s\n+++ b/%s\n", f.Path, f.Path)
+				for _, h := range f.Hunks {
+					lines := strings.Split(h.Content, "\n")
+					if len(lines) > 200 {
+						lines = append(lines[:200:200], "... (truncated)")
+					}
+					for _, l := range lines {
+						if len(l) > 500 {
+							l = truncateUTF8(l, 500) + "..."
+						}
+						w.write(l + "\n")
+					}
+				}
+				w.write("\n")
+			}
 		}
 	}
 

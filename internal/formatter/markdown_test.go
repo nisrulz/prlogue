@@ -56,7 +56,7 @@ func TestFormatMarkdown_TemplateMode(t *testing.T) {
 	if !strings.Contains(output, "Template body") {
 		t.Error("expected template body in output")
 	}
-	if !strings.Contains(output, "PROJ-123") {
-		t.Error("expected issue refs in output")
+	if strings.Contains(output, "PROJ-123") || strings.Contains(output, "abc123") {
+		t.Error("template markdown output must not append repository metadata")
 	}
 }

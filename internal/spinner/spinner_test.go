@@ -18,3 +18,23 @@ func TestSpinnerNoOpWhenNotTerminal(t *testing.T) {
 		t.Fatalf("spinner wrote %q to a non-terminal writer", buf.String())
 	}
 }
+
+// The progress list must leave a non-terminal writer untouched too.
+func TestProgressListNoOpWhenNotTerminal(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewProgressList(&buf, []string{"one", "two"})
+	p.Start()
+	p.Advance()
+	p.Finish()
+	if buf.Len() != 0 {
+		t.Fatalf("progress list wrote %q to a non-terminal writer", buf.String())
+	}
+}
+
+// An empty list must not panic through the full lifecycle.
+func TestProgressListEmpty(t *testing.T) {
+	p := NewProgressList(&bytes.Buffer{}, nil)
+	p.Start()
+	p.Advance()
+	p.Finish()
+}

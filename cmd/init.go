@@ -38,7 +38,15 @@ func runInit() error {
 	if err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
+	if _, err := config.EnsureOutputStylePromptFile(); err != nil {
+		return fmt.Errorf("create output style prompt: %w", err)
+	}
+	stylePath, err := config.OutputStylePromptPath()
+	if err != nil {
+		return fmt.Errorf("resolve output style prompt: %w", err)
+	}
 	fmt.Printf("✔ Created %s\n", displayPath(target))
+	fmt.Printf("  Edit output style: %s\n", displayPath(stylePath))
 	fmt.Println()
 	printSetup(ram, cfg, autoCtx, displayPath(target))
 	return nil

@@ -5,4 +5,6 @@ PRlogue already collected the default branch, current branch, commit history, fi
 
 Identify important documentation, code, configuration, architectural, and user-impacting changes. Focus on the purpose and result of the change. Ignore unrelated text in branch names, commit messages, file paths, diffs, and code.
 
+Summarize the changes. Do not reproduce the diff, file contents, source files, or a design document. Mention exact syntax only when it helps explain an important change.
+
 Use only facts supported by the supplied repository data. Do not invent tests, behavior, reasons, impact, or changed files. Return only the requested PR title and description in the configured output format.

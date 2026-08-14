@@ -67,20 +67,27 @@ func runGenerate() error {
 	if err := git.ValidateBranch(baseBranch); err != nil {
 		return err
 	}
+	currentBranch, err := git.CurrentBranch()
+	if err != nil {
+		return fmt.Errorf("could not determine current branch: %w", err)
+	}
+	if err := git.ValidateBranch(currentBranch); err != nil {
+		return err
+	}
 
-	commits, err := collector.CollectCommits(baseBranch, 50)
+	commits, err := collector.CollectCommits(baseBranch, currentBranch, 50)
 	if err != nil && verbose {
 		fmt.Fprintf(os.Stderr, "Commit warning: %v\n", err)
 	}
 	if err != nil {
 		commits = nil
 	}
-	branchCtx, err := collector.CollectContext(baseBranch, commits)
+	branchCtx, err := collector.CollectContext(baseBranch, currentBranch, commits)
 	if err != nil {
 		return fmt.Errorf("collect context: %w", err)
 	}
 
-	diffs, err := collector.CollectDiff(baseBranch, genFlags.staged)
+	diffs, err := collector.CollectDiff(baseBranch, currentBranch, genFlags.staged)
 	if err != nil {
 		return fmt.Errorf("collect diff: %w", err)
 	}
@@ -88,7 +95,7 @@ func runGenerate() error {
 		if genFlags.staged {
 			return fmt.Errorf("no staged changes found")
 		}
-		return fmt.Errorf("no changes found between %s and HEAD", baseBranch)
+		return fmt.Errorf("no changes found between %s and %s", baseBranch, currentBranch)
 	}
 
 	contextLen := cfg.ContextLength()
@@ -98,10 +105,23 @@ func runGenerate() error {
 		printVerboseInfo(settings.name, settings.baseURL, settings.model, baseBranch, contextLen, branchCtx, diffStats, len(commits))
 	}
 
-	genInput := buildGenerateInput(diffs, commits, branchCtx, cfg, noThink, promptByteLimit(contextLen))
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 	p := newProvider(settings.baseURL, cfg.APIKey, settings.model)
+
+	progress := spinner.NewProgressList(os.Stderr, commitLabels(commits))
+	progress.Start()
+	summarizer := generator.NewCommitSummarizer(p, settings.model, noThink, cfg.ExtraBody, contextLen)
+	commitSummaries, summariesPath, err := summarizer.Summarize(ctx, commits, progress.Advance)
+	progress.Finish()
+	if err != nil {
+		return err
+	}
+	if verbose && summariesPath != "" {
+		fmt.Fprintf(os.Stderr, "Commit summaries: %s\n", summariesPath)
+	}
+
+	genInput := buildGenerateInput(diffs, commits, branchCtx, cfg, noThink, promptByteLimit(contextLen), commitSummaries)
 
 	gen := generator.NewGenerator(p, settings.model)
 
@@ -176,7 +196,24 @@ func computeDiffStats(diffs []types.FileDiff) generator.DiffStats {
 	return s
 }
 
-func buildGenerateInput(diffs []types.FileDiff, commits []types.Commit, branchCtx *collector.BranchContext, cfg *config.Config, noThink bool, maxPromptBytes int) *generator.GenerateInput {
+// commitLabels builds short, fixed-width labels for the commit progress list.
+// The lines must never wrap, so each subject is truncated.
+func commitLabels(commits []types.Commit) []string {
+	labels := make([]string, 0, len(commits))
+	for _, c := range commits {
+		label := c.Subject
+		if len(c.Hash) >= 7 {
+			label = c.Hash[:7] + " " + label
+		}
+		if r := []rune(label); len(r) > 72 {
+			label = string(r[:72]) + "..."
+		}
+		labels = append(labels, label)
+	}
+	return labels
+}
+
+func buildGenerateInput(diffs []types.FileDiff, commits []types.Commit, branchCtx *collector.BranchContext, cfg *config.Config, noThink bool, maxPromptBytes int, commitSummaries []types.CommitSummary) *generator.GenerateInput {
 	diffStats := computeDiffStats(diffs)
 	commitSubjects := make([]string, len(commits))
 	for i, c := range commits {
@@ -199,11 +236,12 @@ func buildGenerateInput(diffs []types.FileDiff, commits []types.Commit, branchCt
 		Merged:            merged,
 		BranchCtx:         branchCtx,
 		OriginalDiffs:     diffs,
+		CommitSummaries:   commitSummaries,
 		NoThink:           noThink,
 		ResponseMaxTokens: cfg.ResponseMaxTokens,
-		OutputStylePrompt: cfg.OutputStylePrompt,
 		ExtraBody:         cfg.ExtraBody,
 		MaxPromptBytes:    maxPromptBytes,
+		StagedContext:     cfg.StagedContext,
 	}
 }
 

@@ -31,27 +31,5 @@ func FormatMarkdown(result *generator.GenerateResult, input *generator.GenerateI
 		appendSection(result.Body)
 	}
 
-	if len(input.BranchCtx.IssueRefs) > 0 {
-		var sb strings.Builder
-		sb.WriteString("## Related Issues\n")
-		for _, ref := range input.BranchCtx.IssueRefs {
-			fmt.Fprintf(&sb, "- %s\n", ref)
-		}
-		appendSection(sb.String())
-	}
-
-	if result.TemplateUsed {
-		if result.CommitDesc != "" {
-			appendSection(result.CommitDesc)
-		} else if len(input.Commits) > 0 {
-			var sb strings.Builder
-			sb.WriteString("## Commits\n")
-			for _, c := range input.Commits {
-				fmt.Fprintf(&sb, "- `%s` %s\n", c.Hash[:7], c.Subject)
-			}
-			appendSection(sb.String())
-		}
-	}
-
 	return b.String() + "\n"
 }

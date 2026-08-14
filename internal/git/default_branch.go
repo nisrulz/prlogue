@@ -48,12 +48,12 @@ func InsideWorkTree() bool {
 }
 
 func CurrentBranch() (string, error) {
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	out, err := exec.Command("git", "branch", "--show-current").Output()
 	if err != nil {
-		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+		return "", fmt.Errorf("git branch --show-current: %w", err)
 	}
 	branch := strings.TrimSpace(string(out))
-	if branch == "" || branch == "HEAD" {
+	if branch == "" {
 		return "", fmt.Errorf("not on a branch (detached HEAD)")
 	}
 	return branch, nil

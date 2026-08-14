@@ -20,8 +20,8 @@ func TestConfigValue(t *testing.T) {
 	if got, ok := configValue(cfg, "response_max_tokens"); !ok || got != "8192" {
 		t.Fatalf("response_max_tokens = %q, %v", got, ok)
 	}
-	if got, ok := configValue(cfg, "output_style_prompt"); !ok || got != "" {
-		t.Fatalf("output_style_prompt = %q, %v", got, ok)
+	if got, ok := configValue(cfg, "output_style_prompt_file"); !ok || got == "" {
+		t.Fatalf("output_style_prompt_file = %q, %v", got, ok)
 	}
 	if _, ok := configValue(cfg, "missing"); ok {
 		t.Fatal("unknown config key was accepted")

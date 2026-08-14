@@ -69,6 +69,18 @@ func writeConfig(t *testing.T, content string) string {
 	return path
 }
 
+func writeOutputStylePrompt(t *testing.T, content string) {
+	t.Helper()
+	base := os.Getenv("PRLOGUE_CONFIG_DIR")
+	dir := filepath.Join(base, "prlogue")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir output style prompt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "output_style_prompt.txt"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write output style prompt: %v", err)
+	}
+}
+
 // writeFile writes content into name inside dir, creating parent directories.
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()

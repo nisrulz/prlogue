@@ -15,10 +15,9 @@ type BranchContext struct {
 	IssueRefs     []string
 }
 
-func CollectContext(defaultBranch string, commits []types.Commit) (*BranchContext, error) {
-	current, err := git.CurrentBranch()
-	if err != nil {
-		current = "unknown"
+func CollectContext(defaultBranch, current string, commits []types.Commit) (*BranchContext, error) {
+	if err := git.ValidateBranch(current); err != nil {
+		return nil, err
 	}
 	commitSubjects := make([]string, len(commits))
 	for i, commit := range commits {

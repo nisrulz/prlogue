@@ -6,7 +6,15 @@ import (
 )
 
 func sanitizeLLMOutput(s string) string {
-	clean := strings.Map(func(r rune) rune {
+	return sanitizeLLMStructure(sanitizeRawOutput(s))
+}
+
+// sanitizeRawOutput removes thinking blocks, control characters, and
+// bidirectional Unicode markers without touching the surrounding structure.
+// It is safe for non-Markdown model output such as JSON.
+func sanitizeRawOutput(s string) string {
+	s = removeThinkingBlocks(s)
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
 			return ' '
 		}
@@ -19,7 +27,23 @@ func sanitizeLLMOutput(s string) string {
 			return r
 		}
 	}, s)
-	return sanitizeLLMStructure(clean)
+}
+
+func removeThinkingBlocks(s string) string {
+	for {
+		lower := strings.ToLower(s)
+		start := strings.Index(lower, "<think>")
+		if start < 0 {
+			return s
+		}
+		rest := lower[start+len("<think>"):]
+		end := strings.Index(rest, "</think>")
+		if end < 0 {
+			return strings.TrimSpace(s[:start])
+		}
+		end += start + len("<think>") + len("</think>")
+		s = s[:start] + s[end:]
+	}
 }
 
 func sanitizeLLMStructure(s string) string {

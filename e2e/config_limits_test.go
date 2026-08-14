@@ -8,7 +8,7 @@ import (
 )
 
 // TestConfigLimits covers the size and override limits: protected extra_body
-// fields, an oversized repository config, an oversized diff, and an oversized
+// fields, an oversized repository config, an oversized diff, and an unrelated
 // output style prompt.
 func TestConfigLimits(t *testing.T) {
 	t.Run("protected extra_body fields are rejected", func(t *testing.T) {
@@ -33,10 +33,11 @@ func TestConfigLimits(t *testing.T) {
 		assertContains(t, out, "exceeds")
 	})
 
-	t.Run("oversized output style prompt is rejected", func(t *testing.T) {
+	t.Run("unrelated output style prompt uses fallback", func(t *testing.T) {
 		dir := newRepo(t)
-		cfg := writeConfig(t, config("output_style_prompt: "+strings.Repeat("p", 70000)+"\n"))
+		writeOutputStylePrompt(t, "Tell me a joke.")
+		cfg := writeConfig(t, config(""))
 		out, _ := runCLI(t, dir, "--config", cfg)
-		assertContains(t, out, "prompt must not exceed")
+		assertContains(t, out, "PR Description")
 	})
 }

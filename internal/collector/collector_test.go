@@ -7,11 +7,21 @@ import (
 )
 
 func TestDiffArgs_DisablesExternalDrivers(t *testing.T) {
-	args := diffArgs("main", false)
-	for _, required := range []string{"--no-ext-diff", "--no-textconv", "main..HEAD", "--"} {
+	args := diffArgs("main", "feature", false)
+	for _, required := range []string{"--no-ext-diff", "--no-textconv", "main...feature", "--"} {
 		if !slices.Contains(args, required) {
 			t.Errorf("diff args missing %q: %v", required, args)
 		}
+	}
+}
+
+func TestCommitArgs_UsesCurrentBranch(t *testing.T) {
+	args := commitArgs("main", "feature/openwiki", 50)
+	if !slices.Contains(args, "main..feature/openwiki") {
+		t.Errorf("commit args do not use current branch: %v", args)
+	}
+	if slices.Contains(args, "main..HEAD") {
+		t.Errorf("commit args still use HEAD: %v", args)
 	}
 }
 
@@ -127,7 +137,7 @@ func TestParseDiff_Empty(t *testing.T) {
 }
 
 func TestParseCommits(t *testing.T) {
-	output := "abc123|John Doe|feat: add login\ndef456|Jane Doe|fix: crash"
+	output := "abc123\x00John Doe\x00feat: add login\x00Body one\x00def456\x00Jane Doe\x00fix: crash\x00\x00"
 	commits := parseCommits(output)
 	if len(commits) != 2 {
 		t.Fatalf("expected 2 commits, got %d", len(commits))
@@ -140,6 +150,12 @@ func TestParseCommits(t *testing.T) {
 	}
 	if commits[0].Subject != "feat: add login" {
 		t.Errorf("subject = %q", commits[0].Subject)
+	}
+	if commits[0].Description != "Body one" {
+		t.Errorf("description = %q", commits[0].Description)
+	}
+	if commits[1].Hash != "def456" || commits[1].Description != "" {
+		t.Errorf("second commit = %+v", commits[1])
 	}
 }
 

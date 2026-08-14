@@ -13,8 +13,8 @@ import (
 
 const maxDiffBytes = 8 << 20
 
-func CollectDiff(baseBranch string, staged bool) ([]types.FileDiff, error) {
-	args := diffArgs(baseBranch, staged)
+func CollectDiff(baseBranch, currentBranch string, staged bool) ([]types.FileDiff, error) {
+	args := diffArgs(baseBranch, currentBranch, staged)
 	out, err := commandOutput(args, maxDiffBytes)
 	if err != nil {
 		return nil, fmt.Errorf("git diff: %w", err)
@@ -23,12 +23,12 @@ func CollectDiff(baseBranch string, staged bool) ([]types.FileDiff, error) {
 	return parseDiff(out), nil
 }
 
-func diffArgs(baseBranch string, staged bool) []string {
+func diffArgs(baseBranch, currentBranch string, staged bool) []string {
 	args := []string{"diff", "--no-ext-diff", "--no-textconv"}
 	if staged {
 		args = append(args, "--staged")
 	} else {
-		args = append(args, baseBranch+"..HEAD")
+		args = append(args, baseBranch+"..."+currentBranch)
 	}
 	args = append(args, "--unified=3", "--")
 	return args

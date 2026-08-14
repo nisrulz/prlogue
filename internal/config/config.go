@@ -24,13 +24,14 @@ const (
 	maxOutputStyleLen = 1 << 16
 	maxResponseTokens = 1 << 20
 	configDirEnv      = "PRLOGUE_CONFIG_DIR"
+	outputStyleFile   = "output_style_prompt.txt"
 )
 
 const openAICompatProvider = "openai_compat"
 
 const DefaultResponseMaxTokens = 8192
 
-//go:embed default_prompt.txt output_style_prompt.txt security_prompt.txt sanitization_prompt.txt
+//go:embed default_prompt.txt output_style_prompt.txt security_prompt.txt sanitization_prompt.txt commit_summary_prompt.txt
 var promptFiles embed.FS
 
 func DefaultPrompt() string {
@@ -49,12 +50,117 @@ func SanitizationPrompt() string {
 	return readPromptFile("sanitization_prompt.txt")
 }
 
+func CommitSummaryPrompt() string {
+	return readPromptFile("commit_summary_prompt.txt")
+}
+
 func readPromptFile(name string) string {
 	data, err := promptFiles.ReadFile(name)
 	if err != nil {
 		panic(fmt.Sprintf("read embedded prompt %q: %v", name, err))
 	}
 	return string(data)
+}
+
+// OutputStylePromptPath returns the path users can edit to change formatting.
+func OutputStylePromptPath() (string, error) {
+	base, err := configBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "prlogue", outputStyleFile), nil
+}
+
+// EnsureOutputStylePromptFile creates the user style file when it is missing.
+func EnsureOutputStylePromptFile() (string, error) {
+	path, err := OutputStylePromptPath()
+	if err != nil {
+		return "", err
+	}
+	info, statErr := os.Lstat(path)
+	if statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return "", fmt.Errorf("output style prompt %s must be a regular file", path)
+		}
+		return path, nil
+	}
+	if !errors.Is(statErr, os.ErrNotExist) {
+		return "", fmt.Errorf("stat output style prompt %s: %w", path, statErr)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", fmt.Errorf("mkdir output style prompt directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(DefaultOutputStylePrompt()), 0600); err != nil {
+		return "", fmt.Errorf("write output style prompt: %w", err)
+	}
+	return path, nil
+}
+
+// LoadOutputStylePrompt loads the user style file or the embedded fallback.
+func LoadOutputStylePrompt() string {
+	path, err := OutputStylePromptPath()
+	if err != nil {
+		return DefaultOutputStylePrompt()
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if _, ensureErr := EnsureOutputStylePromptFile(); ensureErr != nil {
+			return DefaultOutputStylePrompt()
+		}
+		return DefaultOutputStylePrompt()
+	}
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() > maxOutputStyleLen {
+		return DefaultOutputStylePrompt()
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !isOutputStylePrompt(string(data)) {
+		return DefaultOutputStylePrompt()
+	}
+	return string(data)
+}
+
+func isOutputStylePrompt(prompt string) bool {
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
+	if prompt == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"ignore previous",
+		"ignore all instructions",
+		"run ",
+		"execute ",
+		"shell",
+		"git ",
+		"secret",
+		"credential",
+		"password",
+		"api key",
+		"tool call",
+		"network request",
+		"file operation",
+		"security policy",
+	} {
+		if strings.Contains(prompt, marker) {
+			return false
+		}
+	}
+	for _, marker := range []string{
+		"format",
+		"title",
+		"heading",
+		"section",
+		"bullet",
+		"markdown",
+		"summary",
+		"description",
+		"concise",
+		"pull request",
+	} {
+		if strings.Contains(prompt, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 type Config struct {
@@ -65,7 +171,7 @@ type Config struct {
 	ResponseMaxTokens int            `mapstructure:"response_max_tokens"`
 	APIKey            string         `mapstructure:"-"`
 	NoThink           bool           `mapstructure:"no_think"`
-	OutputStylePrompt string         `mapstructure:"output_style_prompt"`
+	StagedContext     bool           `mapstructure:"staged_context"`
 	ExtraBody         map[string]any `mapstructure:"extra_body"`
 	Context           ContextConf    `mapstructure:"context"`
 	Chunking          ChunkConf      `mapstructure:"chunking"`
@@ -132,7 +238,7 @@ func DefaultConfig() *Config {
 		BaseURL:           "http://localhost:11434/v1",
 		ResponseMaxTokens: DefaultResponseMaxTokens,
 		NoThink:           true,
-		OutputStylePrompt: DefaultOutputStylePrompt(),
+		StagedContext:     true,
 		Context: ContextConf{
 			Mode:    "auto",
 			Manual:  131072,
@@ -176,6 +282,11 @@ func load(path string, allowProjectOverrides bool) (*Config, error) {
 			return nil, fmt.Errorf("stat config %s: %w", target, statErr)
 		}
 	}
+	if path == "" {
+		if _, err := EnsureOutputStylePromptFile(); err != nil {
+			return nil, fmt.Errorf("create output style prompt: %w", err)
+		}
+	}
 
 	v := newViper()
 	if err := readTrustedConfig(v, path); err != nil {
@@ -188,6 +299,9 @@ func load(path string, allowProjectOverrides bool) (*Config, error) {
 	}
 	if !v.IsSet("response_max_tokens") {
 		cfg.ResponseMaxTokens = DefaultResponseMaxTokens
+	}
+	if !v.IsSet("staged_context") {
+		cfg.StagedContext = true
 	}
 
 	if path == "" && allowProjectOverrides {
@@ -328,9 +442,6 @@ func (c *Config) Validate() error {
 	if c.System.OSReservationGB < 0 || c.System.ModelSizeGB < 0 {
 		return fmt.Errorf("system memory values must not be negative")
 	}
-	if len(c.OutputStylePrompt) > maxOutputStyleLen {
-		return fmt.Errorf("output_style_prompt must not exceed %d bytes", maxOutputStyleLen)
-	}
 	for key := range c.ExtraBody {
 		switch key {
 		case "model", "messages", "max_tokens", "temperature", "stream":
@@ -423,7 +534,7 @@ func Save(cfg *Config, path string) (string, error) {
 	v.Set("base_url", cfg.BaseURL)
 	v.Set("response_max_tokens", cfg.ResponseMaxTokens)
 	v.Set("no_think", cfg.NoThink)
-	v.Set("output_style_prompt", cfg.OutputStylePrompt)
+	v.Set("staged_context", cfg.StagedContext)
 	v.Set("context.mode", cfg.Context.Mode)
 	v.Set("context.manual", cfg.Context.Manual)
 	v.Set("context.max_auto", cfg.Context.MaxAuto)
@@ -520,13 +631,21 @@ func configPath(path string) (string, error) {
 	if path != "" {
 		return path, nil
 	}
-	base := os.Getenv(configDirEnv)
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("home dir: %w", err)
-		}
-		base = filepath.Join(home, ".config")
+	base, err := configBaseDir()
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(base, "prlogue", configName+"."+configType), nil
+}
+
+func configBaseDir() (string, error) {
+	base := os.Getenv(configDirEnv)
+	if base != "" {
+		return base, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	return filepath.Join(home, ".config"), nil
 }

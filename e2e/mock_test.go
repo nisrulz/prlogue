@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 )
 
 // completionContent mirrors the format a real model returns for the default
@@ -19,6 +20,9 @@ Mock summary of the PR changes.
 
 ### Key Changes
 - Mock generated description.`
+
+// commitSummaryContent is a valid per-commit summary for the summarizer.
+const commitSummaryContent = `{"subject":"commit","summary":"Mock commit summary.","key_changes":["file.go"],"impact":"Mock impact."}`
 
 func startMockServer() *httptest.Server {
 	mux := http.NewServeMux()
@@ -36,12 +40,16 @@ func startMockServer() *httptest.Server {
 			http.NotFound(w, r)
 			return
 		}
-		io.Copy(io.Discard, r.Body)
+		content := completionContent
+		body, _ := io.ReadAll(r.Body)
+		if isCommitSummaryRequest(body) {
+			content = commitSummaryContent
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"id":    "ci-mock-completion",
 			"model": "ci-mock",
 			"choices": []map[string]any{
-				{"message": map[string]any{"role": "assistant", "content": completionContent}},
+				{"message": map[string]any{"role": "assistant", "content": content}},
 			},
 			"usage": map[string]int{
 				"prompt_tokens":     1,
@@ -51,6 +59,23 @@ func startMockServer() *httptest.Server {
 		})
 	})
 	return httptest.NewServer(mux)
+}
+
+func isCommitSummaryRequest(body []byte) bool {
+	var req struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return false
+	}
+	for _, m := range req.Messages {
+		if strings.Contains(m.Content, "Reply with exactly one JSON object") {
+			return true
+		}
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

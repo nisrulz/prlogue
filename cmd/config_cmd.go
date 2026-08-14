@@ -43,7 +43,11 @@ func showConfig() error {
 	fmt.Fprintf(os.Stdout, "response_max_tokens:         %d\n", cfg.ResponseMaxTokens)
 	fmt.Fprintf(os.Stdout, "api_key:                     %s\n", secretStatus(cfg.APIKey))
 	fmt.Fprintf(os.Stdout, "no_think:                    %v\n", cfg.NoThink)
-	fmt.Fprintf(os.Stdout, "output_style_prompt:         %s\n", promptStatus(cfg.OutputStylePrompt))
+	stylePath, err := config.OutputStylePromptPath()
+	if err != nil {
+		return fmt.Errorf("resolve output style prompt: %w", err)
+	}
+	fmt.Fprintf(os.Stdout, "output_style_prompt_file:    %s\n", displayPath(stylePath))
 	fmt.Fprintf(os.Stdout, "context.mode:                %s\n", cfg.Context.Mode)
 	fmt.Fprintf(os.Stdout, "context.manual:              %d\n", cfg.Context.Manual)
 	fmt.Fprintf(os.Stdout, "context.max_auto:            %d\n", cfg.Context.MaxAuto)
@@ -91,8 +95,12 @@ func configValue(cfg *config.Config, key string) (string, bool) {
 		return secretStatus(cfg.APIKey), true
 	case "no_think":
 		return strconv.FormatBool(cfg.NoThink), true
-	case "output_style_prompt":
-		return cfg.OutputStylePrompt, true
+	case "output_style_prompt_file":
+		path, err := config.OutputStylePromptPath()
+		if err != nil {
+			return "", false
+		}
+		return displayPath(path), true
 	case "context.mode":
 		return cfg.Context.Mode, true
 	case "context.manual":
@@ -125,13 +133,6 @@ func secretStatus(value string) string {
 		return "not set"
 	}
 	return "*** (PRLOGUE_OPENAI_COMPAT_API_KEY)"
-}
-
-func promptStatus(value string) string {
-	if value == "" {
-		return "not set (bundled prompt)"
-	}
-	return "set (custom)"
 }
 
 func init() {

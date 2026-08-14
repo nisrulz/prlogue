@@ -20,9 +20,21 @@ type FileDiff struct {
 }
 
 type Commit struct {
-	Hash    string
-	Subject string
-	Author  string
+	Hash        string
+	Subject     string
+	Author      string
+	Description string
+}
+
+// CommitSummary is the structured, model-generated digest of one commit. The
+// full list is stored in a single JSON file and used as the context for the
+// final PR title and description generation.
+type CommitSummary struct {
+	Hash       string   `json:"hash"`
+	Subject    string   `json:"subject"`
+	Summary    string   `json:"summary"`
+	KeyChanges []string `json:"key_changes"`
+	Impact     string   `json:"impact"`
 }
 
 type Chunk struct {
