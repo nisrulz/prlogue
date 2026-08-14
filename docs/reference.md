@@ -103,12 +103,13 @@ Set `provider` to `openai_compat`, then set `base_url` and `model` for the serve
 `response_max_tokens` sets the response limit for PR generation. It defaults to `8192`.
 You can set it from `8192` to `1048576`.
 Choose a lower value when your provider has a smaller limit, but keep it at least `8192`.
+The limit applies to the final generation call. Per-commit summaries use a fixed 2048-token budget.
 
 PRlogue accepts plain HTTP only for `localhost` and loopback IP addresses. Remote endpoints must use HTTPS, and HTTP redirects are not followed.
 
 ## User config
 
-PRlogue stores user config at `$PRLOGUE_CONFIG_DIR/prlogue/config.yaml`. `PRLOGUE_CONFIG_DIR` defaults to `~/.config`. The first run creates the directory and the config file. After that, the file is the source of truth. Older files without `response_max_tokens` use the default value of `8192`.
+PRlogue stores user config at `$PRLOGUE_CONFIG_DIR/prlogue/config.yaml`. `PRLOGUE_CONFIG_DIR` defaults to `~/.config`. The first run creates the directory and the config file. After that, the file is the source of truth. Older files without `response_max_tokens` use `8192`, and files without `staged_context` default to `true`.
 
 The generated config looks like this:
 
@@ -119,22 +120,7 @@ model: lfm2.5:8b                       # required model name
 base_url: http://localhost:11434/v1    # required OpenAI-compatible endpoint
 response_max_tokens: 8192              # maximum response tokens sent to the provider
 no_think: true                         # optional, defaults to false when omitted
-output_style_prompt: |                 # optional, uses the bundled format prompt when empty
-  Output only a PR description in this format and nothing else:
-
-  Title: <one-line PR title>
-
-  ### PR Description
-  Write a concise 2-3 sentence summary of what the PR does and why.
-
-  ### Key Changes
-  - <important change 1>
-  - <important change 2>
-  - <important change 3>
-
-  Omit `### Key Changes` when no relevant changes exist. Use these headings and bullet style exactly.
-  Do not add placeholder categories, filler text, commits, related issues, or other metadata.
-  Keep one blank line between sections. Copy complete syntax from the diff, or describe it without the syntax.
+staged_context: true                   # optional, defaults to true when omitted
 extra_body: {}                         # optional provider-specific request fields
 
 context:                               # required context settings
@@ -159,7 +145,11 @@ system:                                # optional
   model_size_gb: 5.2                   # optional model size used for context sizing
 ```
 
-The generated config includes the bundled format prompt in `output_style_prompt`. PRlogue keeps the task, security, and sanitization prompts outside the config file.
+`prlogue init` copies the bundled style prompt to `$PRLOGUE_CONFIG_DIR/prlogue/output_style_prompt.txt`.
+
+PRlogue keeps the task, security, sanitization, and commit-summary prompts outside the config file.
+
+`staged_context` controls how PRlogue sends the prompt. With `true` (the default), each context block goes in its own model call and the model holds its output until the final call. Set it to `false` to send every block in one call. Staged delivery helps models that lose track of context in a single large request. If a small model keeps misbehaving, try `staged_context: false`.
 
 An explicit `--config <path>` is treated as trusted user config. PRlogue validates the whole file before doing any work.
 
@@ -175,30 +165,29 @@ Check the current value with `prlogue config get name`.
 
 ## Output style prompt
 
-The embedded task prompt tells the model how to review the collected repository data. The bundled output style prompt defines the `Title:` and `### PR Description` format. Set `output_style_prompt` to change the format or presentation.
+The embedded task prompt tells the model how to review the collected repository data. The bundled style prompt defines the `Title:` and `### PR Description` format.
 
-PRlogue sends the branch, issue, commit, and diff data in a separate user message.
+PRlogue sends the branch context and the per-commit summaries in a separate user message.
 
-PRlogue sends the output style prompt as a system message. The value has a 64 KiB limit. PRlogue adds immutable security and sanitization policies after it. The configured prompt cannot change those policies.
+`prlogue init` copies the bundled prompt to:
 
-```yaml
-# edit $PRLOGUE_CONFIG_DIR/prlogue/config.yaml
-output_style_prompt: |
-  Use concise headings for a Go codebase.
-  Start with "Title:" on the first line.
+```text
+$PRLOGUE_CONFIG_DIR/prlogue/output_style_prompt.txt
 ```
 
-Tell the model to put `Title:` on the first output line. PRlogue uses that line as the PR title; otherwise it falls back to the current branch name.
+Edit that file to change the output format. PRlogue creates it when a command needs it and the file does not exist.
 
-The output style prompt only affects the model path. The template fallback ignores it and always builds the description from the git data.
+PRlogue loads the file before it uses the embedded fallback. Empty, oversized, or unrelated content uses the fallback instead.
 
-Edit the config file to set or clear it. An empty string uses the bundled output style prompt:
+The file may contain format rules only. PRlogue ignores content about commands, tools, secrets, repository actions, or prompt policies.
 
-```yaml
-output_style_prompt: ""
-```
+PRlogue sends the style prompt as a system message. The file has a 64 KiB limit. Immutable task, security, sanitization, and commit-summary prompts remain separate.
 
-Check the current value with `prlogue config get output_style_prompt`. `prlogue config` prints whether it is set.
+Tell the model to put `Title:` on the first output line. PRlogue uses that line as the PR title; otherwise it uses the current branch name.
+
+The style prompt only affects the model path. The template fallback builds its description from Git data.
+
+Check the file path with `prlogue config get output_style_prompt_file`. The `prlogue config` command also shows the path.
 
 If a provider rejects the response limit, lower `response_max_tokens` in the config file and run `prlogue generate` again.
 
@@ -237,13 +226,13 @@ prlogue config
 
 # Read one value
 prlogue config get provider
-prlogue config get output_style_prompt
+prlogue config get output_style_prompt_file
 
 # Back up the current config and restore defaults
 prlogue reset-config
 ```
 
-Settings are edited directly in the config file. `api_key` is never stored in config; use `PRLOGUE_OPENAI_COMPAT_API_KEY` instead.
+Edit settings directly in the config file. Edit the style file separately. `api_key` is never stored in config; use `PRLOGUE_OPENAI_COMPAT_API_KEY` instead.
 
 `reset-config` writes a backup next to the config before it writes a new default config. The backup name has this form: `config.yaml.YYYYMMDD-HHMMSS.NNNNNNNNN.bak`. The command uses the configured `$PRLOGUE_CONFIG_DIR` path, or the path passed with `--config`.
 
@@ -296,7 +285,7 @@ Every check prints `✔` for a pass, `⚠` for a warning, and `✗` for a proble
 
 Auto mode estimates the context size from available RAM and the configured model size. Manual mode uses `context.manual`.
 
-The resolved context size controls how much repository data PRlogue includes in the request. The repository-data prompt is capped at 1 MiB and always keeps the closing untrusted-data marker. The output style prompt is capped at 64 KiB. Git diff collection stops at 8 MiB. Larger diffs return a clear error instead of exhausting memory.
+The resolved context size controls how much repository data PRlogue includes in the request. The repository-data prompt is capped at 1 MiB and always keeps the closing untrusted-data marker. Each per-commit diff is capped at 1 MiB before it is summarized. The output style prompt is capped at 64 KiB. Git diff collection stops at 8 MiB. Larger diffs return a clear error instead of exhausting memory.
 
 This setting does not reconfigure your model server. Configure the server context separately, for example with `lms load --context-length`.
 
@@ -314,14 +303,34 @@ prlogue generate --publish
 
 Publishing requires the [GitHub CLI](https://cli.github.com/) and an authenticated GitHub session. Only the command-line flag can publish. User and repository config cannot enable it automatically.
 
+## Commit summaries
+
+PRlogue reads the range between the base branch and the current branch, then summarizes each commit in its own model call. The prompt for one commit is its message, its description, and its bounded diff. The model returns a JSON object with the summary, key changes, and impact.
+
+In an interactive terminal, PRlogue lists every commit while it works. Each row starts with a braille spinner, then turns into a check mark when that commit is summarized.
+
+All summaries are stored in one JSON file in the system temp directory. `prlogue generate -v` prints the file path. The final generation call reads the summaries instead of the raw diff, so the model sees a compact and complete digest of every commit.
+
+A failed summary call does not stop the run. PRlogue fills in a fallback entry with the commit subject, description, and changed file paths, so no commit is dropped.
+
+Small models sometimes return a summary that is wrong but well formed. The checks in the final generation call catch the common cases:
+
+- Output that echoes an acknowledgment (for example, "OK" or "ACK").
+- Output that refuses or claims there are no changes when the diff has files.
+- Output that repeats the diff instead of describing it.
+
+PRlogue rejects that output, retries once with the repository statistics, and falls back to the local template if the retry still fails.
+
 ## Pipeline
 
 1. Resolve and validate the trusted config.
-2. Detect the base branch and collect up to 50 commits.
+2. Detect the base branch and collect up to 50 commits (with message bodies).
 3. Read a bounded Git diff with external diff drivers disabled.
-4. Classify and chunk changes locally for JSON and template output.
-5. Send one bounded request to the selected model.
-6. Use the local template if the server is unavailable.
-7. Format the result as Markdown or JSON, then publish only when requested.
+4. Summarize each commit from its message, description, and per-commit diff, and store all summaries in one JSON file in the temp directory.
+5. Classify and chunk changes locally for JSON and template output.
+6. Send each bounded context block (security, sanitization, output style, commit summaries) as its own model call, asking the model to hold its output until all blocks are sent.
+7. Release the collected context in a final generation call for the PR title and description. Output that echoes an acknowledgment, refuses, or claims there are no changes is rejected and retried once against the repository statistics.
+8. Use the local template if the server is unavailable or the output stays unusable.
+9. Format the result as Markdown or JSON, then publish only when requested.
 
-The normal path makes one model call.
+`prlogue generate -v` prints the path of the commit-summary JSON file so you can inspect what the model was given.

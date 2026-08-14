@@ -47,6 +47,11 @@ CI sets `PRLOGUE_LIVE_TEST_PROVIDER=mock`. This starts an in-process
 OpenAI-compatible mock server with `httptest`. The suite then needs no live
 model server or external binary. Do not set this variable when testing Ollama.
 
+The mock answers commit-summary calls with a fixed JSON summary and PR
+generation calls with a fixed completion, so the full pipeline runs end to
+end. The per-commit summarizer accepts any well-formed JSON, so the exact
+subject in the mock response does not matter.
+
 ## Test the fallback
 
 Unit tests cover the template fallback with an OpenAI-compatible client stub. To test it from the binary, point PRlogue at an unused local endpoint:

@@ -4,7 +4,9 @@
 
 ![Header](img/github_banner.png)
 
-PRlogue turns commits and diffs into PR descriptions. It runs locally by default, so your Git data stays on your machine. Use Ollama or any OpenAI-compatible server.
+PRlogue summarizes each commit from its message and diff, then turns the result into a PR description. It runs locally by default, so your Git data stays on your machine. Use Ollama or any OpenAI-compatible server.
+
+PRlogue sends the model one bounded block at a time, then generates the PR title and description in a final call. If the model output fails its checks, PRlogue retries once and falls back to a deterministic template.
 
 ## Quick start
 

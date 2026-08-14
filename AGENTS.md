@@ -9,9 +9,10 @@ commits, diffs, branch context, and an OpenAI-compatible model.
 
 ```mermaid
 graph LR
-  A[Collect<br/>bounded diff/commits/branch] --> B[Processor<br/>chunk/merge/analyze]
-  B --> C[Generator<br/>one LLM call<br/>template fallback]
-  C --> D[Formatter<br/>markdown/json]
+  A[Collect<br/>bounded diff/commits/branch] --> B[Summarizer<br/>per-commit JSON<br/>in one file]
+  B --> C[Processor<br/>chunk/merge/analyze]
+  C --> D[Generator<br/>staged context calls<br/>validated output + retry<br/>template fallback]
+  D --> E[Formatter<br/>markdown/json]
 ```
 
 ## Key files
@@ -30,19 +31,21 @@ graph LR
 | `internal/provider/openai_compat.go` | OpenAI-compatible provider |
 | `internal/provider/interface.go` | Provider interface |
 | `internal/generator/generator.go` | LLM PR body generation |
+| `internal/generator/summarizer.go` | Per-commit LLM summaries + single JSON file |
 | `internal/generator/sanitizer.go` | LLM output cleanup and structure sanitization |
 | `internal/generator/template.go` | Template fallback |
 | `internal/formatter/markdown.go` | Markdown output |
 | `internal/formatter/json.go` | JSON output |
 | `internal/collector/diff.go` | git diff parsing |
-| `internal/collector/commit.go` | git log collection |
+| `internal/collector/commit.go` | git log collection + per-commit diffs |
 | `internal/collector/context.go` | Branch + issue refs |
 | `internal/sysinfo/memory.go` | RAM detection + LMS integration |
 | `internal/config/config.go` | Trusted config, provider profiles, validation, and auto context |
 | `internal/config/default_prompt.txt` | Embedded PR analysis task prompt |
-| `internal/config/output_style_prompt.txt` | User-configurable output format fallback |
+| `internal/config/output_style_prompt.txt` | Embedded fallback style prompt |
 | `internal/config/security_prompt.txt` | Immutable security system prompt |
 | `internal/config/sanitization_prompt.txt` | Immutable output sanitization system prompt |
+| `internal/config/commit_summary_prompt.txt` | Embedded per-commit summarization prompt |
 | `internal/types/types.go` | Shared types + helpers |
 | `e2e/` | Go end-to-end test suite (build tag `e2e`; mock provider runs in-process) |
 
@@ -76,10 +79,13 @@ mock server.
 The default config file is `$PRLOGUE_CONFIG_DIR/prlogue/config.yaml`. When
 `PRLOGUE_CONFIG_DIR` is not set, it is `~/.config/prlogue/config.yaml`.
 
-The user-configurable fields include `response_max_tokens` and `output_style_prompt`.
+The user-configurable fields are `response_max_tokens` and `staged_context`.
+`staged_context` defaults to `true`. Set it to `false` to send all prompt blocks
+in one model call. Users edit
+`$PRLOGUE_CONFIG_DIR/prlogue/output_style_prompt.txt` for output style changes.
 Set `response_max_tokens` from `8192` to `1048576`.
-The task, security, and sanitization prompts are embedded and cannot be
-configured.
+The task, security, sanitization, and commit-summary prompts are embedded and
+cannot be configured.
 `reset-config` backs up the current config as `config.yaml.<UTC timestamp>.bak`
 before it writes a new default config.
 
@@ -95,7 +101,16 @@ Use `--config` only with a trusted config file. Keep API keys in
   immutable security or sanitization policies.
 - Sanitize model output before formatting or publishing. Never execute model
   output or pass it to a shell, evaluator, or tool.
-- Use one model call on the normal generation path.
+- Send each prompt block in its own model call on the normal generation path.
+  Ask the model to hold its output until every block is sent, then generate the
+  PR title and description in a final call.
+- Summarize each commit first from its message, description, and diff. Store the
+  per-commit summaries in one JSON file and send that as the PR-generation
+  context instead of raw git data. Use a deterministic fallback entry when a
+  commit summary call fails.
+- Reject model output that echoes an acknowledgment, refuses, or claims there
+  are no changes when repository data exists. Retry once with the repository
+  statistics, then fall back to the template.
 - Prefer the standard library and existing dependencies.
 - Keep unit tests next to the code they test.
 
