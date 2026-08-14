@@ -109,6 +109,9 @@ func runGenerate() error {
 	defer cancel()
 	p := newProvider(settings.baseURL, cfg.APIKey, settings.model)
 
+	if len(commits) > 0 {
+		fmt.Fprintln(os.Stderr, sectionBanner("Summarize commits"))
+	}
 	progress := spinner.NewProgressList(os.Stderr, commitLabels(commits))
 	progress.Start()
 	summarizer := generator.NewCommitSummarizer(p, settings.model, noThink, cfg.ExtraBody, contextLen)
@@ -116,6 +119,9 @@ func runGenerate() error {
 	progress.Finish()
 	if err != nil {
 		return err
+	}
+	if len(commits) > 0 {
+		fmt.Fprintln(os.Stderr)
 	}
 	if verbose && summariesPath != "" {
 		fmt.Fprintf(os.Stderr, "Commit summaries: %s\n", summariesPath)
@@ -132,6 +138,9 @@ func runGenerate() error {
 	if err != nil {
 		return err
 	}
+
+	fmt.Fprintln(os.Stderr, sectionBanner("Generated output"))
+	fmt.Fprintln(os.Stderr)
 
 	format := cfg.Output.Format
 
@@ -194,6 +203,14 @@ func computeDiffStats(diffs []types.FileDiff) generator.DiffStats {
 		s.Hunks += len(f.Hunks)
 	}
 	return s
+}
+
+// sectionBannerWidth matches the box-drawing lines used around CLI sections.
+const sectionBannerWidth = 59
+
+func sectionBanner(title string) string {
+	line := strings.Repeat("=", sectionBannerWidth)
+	return line + "\n" + title + "\n" + line
 }
 
 // commitLabels builds short, fixed-width labels for the commit progress list.

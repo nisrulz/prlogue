@@ -19,15 +19,17 @@ func TestSpinnerNoOpWhenNotTerminal(t *testing.T) {
 	}
 }
 
-// The progress list must leave a non-terminal writer untouched too.
-func TestProgressListNoOpWhenNotTerminal(t *testing.T) {
+// A non-terminal writer gets a static list: no animation, just one tick line
+// per completed item.
+func TestProgressListStaticWhenNotTerminal(t *testing.T) {
 	var buf bytes.Buffer
 	p := NewProgressList(&buf, []string{"one", "two"})
 	p.Start()
 	p.Advance()
+	p.Advance()
 	p.Finish()
-	if buf.Len() != 0 {
-		t.Fatalf("progress list wrote %q to a non-terminal writer", buf.String())
+	if got := buf.String(); got != "✓ one\n✓ two\n" {
+		t.Fatalf("progress list wrote %q", got)
 	}
 }
 

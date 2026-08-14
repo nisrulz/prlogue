@@ -21,6 +21,7 @@ type ProgressList struct {
 	stop    chan struct{}
 	done    chan struct{}
 	anim    bool
+	static  bool
 	running bool
 	drawn   bool
 }
@@ -30,10 +31,15 @@ func NewProgressList(w io.Writer, items []string) *ProgressList {
 	return &ProgressList{w: w, items: items}
 }
 
-// Start begins rendering the list. It is a no-op when w is not a terminal or
-// there are no items.
+// Start begins rendering the list. It animates when w is a terminal; for any
+// other writer it marks each item done as Advance is called. It is a no-op
+// when there are no items.
 func (p *ProgressList) Start() {
-	if !p.animatable() || len(p.items) == 0 {
+	if len(p.items) == 0 {
+		return
+	}
+	if !p.animatable() {
+		p.static = true
 		return
 	}
 	p.mu.Lock()
@@ -47,8 +53,15 @@ func (p *ProgressList) Start() {
 }
 
 // Advance marks the current item done and moves the spinner to the next item.
-// It is a no-op when rendering is off.
+// When rendering is off, it prints the completed item as a tick line.
 func (p *ProgressList) Advance() {
+	if p.static {
+		if p.active < len(p.items) {
+			fmt.Fprintf(p.w, "✓ %s\n", p.items[p.active])
+		}
+		p.active++
+		return
+	}
 	p.mu.Lock()
 	anim := p.anim
 	if anim {
@@ -62,6 +75,9 @@ func (p *ProgressList) Advance() {
 
 // Finish stops the animation and leaves the final list on screen.
 func (p *ProgressList) Finish() {
+	if p.static {
+		return
+	}
 	p.mu.Lock()
 	if !p.running {
 		p.mu.Unlock()
