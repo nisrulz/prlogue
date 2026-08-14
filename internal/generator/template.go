@@ -18,7 +18,7 @@ func (t *TemplateGenerator) Generate(input *GenerateInput) *GenerateResult {
 	var body strings.Builder
 
 	if input.DiffStats.Files > 0 {
-		fmt.Fprintf(&body, "### PR Description\n\n")
+		fmt.Fprintf(&body, "## PR Description\n\n")
 		types := uniqueChangeTypes(input.Merged)
 		desc := fmt.Sprintf("This PR makes changes across %d file(s) with %d additions and %d deletions",
 			input.DiffStats.Files, input.DiffStats.Additions, input.DiffStats.Deletions)

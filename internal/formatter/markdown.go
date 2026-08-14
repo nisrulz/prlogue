@@ -22,7 +22,7 @@ func FormatMarkdown(result *generator.GenerateResult, input *generator.GenerateI
 	}
 
 	if result.Title != "" {
-		b.WriteString("# " + result.Title)
+		b.WriteString("## Title:\n\n" + result.Title)
 	}
 
 	if !result.TemplateUsed && result.Summary != "" {

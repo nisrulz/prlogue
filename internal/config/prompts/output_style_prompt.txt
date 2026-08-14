@@ -2,7 +2,7 @@ Output only a PR description in this format and nothing else:
 
 Title: <one-line PR title>
 
-### PR Description
+## PR Description
 
 Write a concise 2-3 sentence summary of what the PR does and why.
 

@@ -147,7 +147,8 @@ func assertAnyContains(t *testing.T, out string, wants ...string) {
 // assertGeneratedBody verifies that a PR body was produced. In mock mode the
 // output is deterministic, so we require the exact "PR Description" heading.
 // Against a live model the wording varies and -v mode prepends a verbose
-// preamble, so we require a title heading ("# ...") anywhere in the output.
+// preamble, so we require a title heading ("## Title:" or "# ...") anywhere in
+// the output.
 func assertGeneratedBody(t *testing.T, out string) {
 	t.Helper()
 	if mockMode {
@@ -155,7 +156,7 @@ func assertGeneratedBody(t *testing.T, out string) {
 		return
 	}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if strings.HasPrefix(line, "# ") {
+		if strings.HasPrefix(line, "## Title:") || strings.HasPrefix(line, "# ") {
 			return
 		}
 	}

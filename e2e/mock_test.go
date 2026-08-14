@@ -15,7 +15,7 @@ import (
 // changes, each under a heading with direct content.
 const completionContent = `Title: CI test PR
 
-### PR Description
+## PR Description
 Mock summary of the PR changes.
 
 ### Key Changes

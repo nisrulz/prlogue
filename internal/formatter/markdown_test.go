@@ -13,7 +13,7 @@ import (
 func TestFormatMarkdown_LLMMode(t *testing.T) {
 	result := &generator.GenerateResult{
 		Title:   "feat/add-login",
-		Summary: "### PR Description\n\nAdded login feature\n### Key Changes\n- login handler",
+		Summary: "## PR Description\n\nAdded login feature\n### Key Changes\n- login handler",
 		Raw:     "full output",
 	}
 	input := &generator.GenerateInput{
@@ -27,8 +27,8 @@ func TestFormatMarkdown_LLMMode(t *testing.T) {
 		},
 	}
 	output := formatter.FormatMarkdown(result, input)
-	if !strings.Contains(output, "# feat/add-login") {
-		t.Error("expected title in markdown output")
+	if !strings.Contains(output, "## Title:\n\nfeat/add-login") {
+		t.Error("expected title section in markdown output")
 	}
 	if !strings.Contains(output, "Added login feature") {
 		t.Error("expected summary in markdown output")
@@ -41,7 +41,7 @@ func TestFormatMarkdown_LLMMode(t *testing.T) {
 func TestFormatMarkdown_TemplateMode(t *testing.T) {
 	result := &generator.GenerateResult{
 		Title:        "feat/add-login",
-		Body:         "### PR Description\nTemplate body",
+		Body:         "## PR Description\nTemplate body",
 		TemplateUsed: true,
 		CommitDesc:   "## Commits\n- abc123 feat",
 	}

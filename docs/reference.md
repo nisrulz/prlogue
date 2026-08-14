@@ -165,7 +165,7 @@ Check the current value with `prlogue config get name`.
 
 ## Output style prompt
 
-The embedded task prompt tells the model how to review the collected repository data. The bundled style prompt defines the `Title:` and `### PR Description` format.
+The embedded task prompt tells the model how to review the collected repository data. The bundled style prompt defines the `Title:`, `## PR Description`, and `### Key Changes` format.
 
 PRlogue sends the branch context and the per-commit summaries in a separate user message.
 
@@ -318,7 +318,7 @@ Small models sometimes return a summary that is wrong but well formed. The check
 - Output that echoes an acknowledgment (for example, "OK" or "ACK").
 - Output that refuses or claims there are no changes when the diff has files.
 - Output that repeats the diff instead of describing it.
-- Output that skips the configured output format, such as the `### PR Description` and `### Key Changes` headings.
+- Output that skips the configured output format, such as the `## PR Description` and `### Key Changes` headings.
 
 PRlogue rejects that output, retries once with the repository statistics, and falls back to the local template if the retry still fails.
 

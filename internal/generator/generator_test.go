@@ -12,7 +12,7 @@ import (
 )
 
 func TestExtractLLMTitle_Valid(t *testing.T) {
-	s := "Title: Add login feature\n\n### PR Description\nAdded login"
+	s := "Title: Add login feature\n\n## PR Description\nAdded login"
 	title, body := extractLLMTitle(s)
 	if title != "Add login feature" {
 		t.Errorf("title = %q, want %q", title, "Add login feature")
@@ -23,7 +23,7 @@ func TestExtractLLMTitle_Valid(t *testing.T) {
 }
 
 func TestExtractLLMTitle_NoTitle(t *testing.T) {
-	s := "### PR Description\nAdded login"
+	s := "## PR Description\nAdded login"
 	title, body := extractLLMTitle(s)
 	if title != "" {
 		t.Errorf("expected empty title, got %q", title)
@@ -35,7 +35,7 @@ func TestExtractLLMTitle_NoTitle(t *testing.T) {
 
 func TestNormalizeLLMSummary_AddsDefaultHeading(t *testing.T) {
 	got := normalizeLLMSummary("The API now supports push tokens.")
-	want := "### PR Description\n\nThe API now supports push tokens."
+	want := "## PR Description\n\nThe API now supports push tokens."
 	if got != want {
 		t.Errorf("normalized summary = %q, want %q", got, want)
 	}
@@ -52,7 +52,7 @@ func TestIsMaxTokensError(t *testing.T) {
 
 func TestGenerate_FallsBackForDiffEcho(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "### PR Description\n\n+a/docs/guide.md\n+++ b/docs/guide.md\n@@ -1,2 +1,4 @@"}
+	p := &captureProvider{result: "## PR Description\n\n+a/docs/guide.md\n+++ b/docs/guide.md\n@@ -1,2 +1,4 @@"}
 	input := &GenerateInput{
 		DiffStats: DiffStats{Files: 1, Additions: 1},
 		BranchCtx: &collector.BranchContext{CurrentBranch: "docs/update"},
@@ -67,7 +67,7 @@ func TestGenerate_FallsBackForDiffEcho(t *testing.T) {
 }
 
 func TestSanitizeLLMOutput_RemovesThinkingBlocks(t *testing.T) {
-	got := sanitizeLLMOutput("<think>internal reasoning</think>Title: Fix\n\n### PR Description\nFixed it.")
+	got := sanitizeLLMOutput("<think>internal reasoning</think>Title: Fix\n\n## PR Description\nFixed it.")
 	if strings.Contains(got, "internal reasoning") || !strings.Contains(got, "Title: Fix") {
 		t.Errorf("thinking block was not removed: %q", got)
 	}
@@ -181,7 +181,7 @@ func (failingProvider) Chat(context.Context, provider.ChatRequest) (*provider.Ch
 
 func TestGenerate_OutputStylePromptOverride(t *testing.T) {
 	custom := "You are a PR summary writer for Go repos. Follow this format exactly."
-	p := &captureProvider{result: "Title: Custom\n\n### PR Description\nCustom summary."}
+	p := &captureProvider{result: "Title: Custom\n\n## PR Description\nCustom summary."}
 	input := &GenerateInput{
 		DiffStats:         DiffStats{Files: 1, Additions: 1},
 		BranchCtx:         &collector.BranchContext{CurrentBranch: "feat/custom"},
@@ -222,7 +222,7 @@ func TestGenerate_OutputStylePromptOverride(t *testing.T) {
 
 func TestGenerate_UsesFilePromptWhenUnset(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "Title: Default\n\n### PR Description\nSummary.\n\n### Key Changes\n- Added a default summary."}
+	p := &captureProvider{result: "Title: Default\n\n## PR Description\nSummary.\n\n### Key Changes\n- Added a default summary."}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 1, Additions: 1},
 		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/default"},
@@ -256,7 +256,7 @@ func TestSanitizeLLMOutput_RemovesUnsafeCharacters(t *testing.T) {
 }
 
 func TestSanitizeLLMOutput_RemovesRedundantSectionsAndPlaceholders(t *testing.T) {
-	input := "Title: Useful change\n\n### PR Description\nAdded a page component.\n\n### Key Changes\n- **Category:** explanation\n- **category**: description\n- Added a page component\n- Added a page component\n## Commits\n- abc1234 subject"
+	input := "Title: Useful change\n\n## PR Description\nAdded a page component.\n\n### Key Changes\n- **Category:** explanation\n- **category**: description\n- Added a page component\n- Added a page component\n## Commits\n- abc1234 subject"
 	got := sanitizeLLMOutput(input)
 	if strings.Contains(strings.ToLower(got), "category") || strings.Contains(got, "## Commits") {
 		t.Errorf("redundant output was not removed: %q", got)
@@ -267,7 +267,7 @@ func TestSanitizeLLMOutput_RemovesRedundantSectionsAndPlaceholders(t *testing.T)
 }
 
 func TestSanitizeLLMOutput_RemovesEmptyKeyChangesSection(t *testing.T) {
-	input := "Title: Useful change\n\n### PR Description\nAdded a page component.\n\n### Key Changes\n- **Category:** explanation\n- Category: TBD"
+	input := "Title: Useful change\n\n## PR Description\nAdded a page component.\n\n### Key Changes\n- **Category:** explanation\n- Category: TBD"
 	got := sanitizeLLMOutput(input)
 	if strings.Contains(got, "Key Changes") || strings.Contains(got, "Category") {
 		t.Errorf("empty placeholder section was not removed: %q", got)
@@ -285,7 +285,7 @@ func TestSanitizeLLMOutput_KeepsCategoryValueWithoutLabel(t *testing.T) {
 }
 
 func TestSanitizeLLMOutput_AddsSpacingAndDropsPartialShortcodes(t *testing.T) {
-	input := "Title: Add component\n### PR Description\nAdded a page component.\n### Key Changes\n- Adds a `{{< component` block.\n- Updates the documentation page."
+	input := "Title: Add component\n## PR Description\nAdded a page component.\n### Key Changes\n- Adds a `{{< component` block.\n- Updates the documentation page."
 	got := sanitizeLLMOutput(input)
 	if !strings.Contains(got, "Added a page component.\n\n### Key Changes") {
 		t.Errorf("headings are not separated: %q", got)
@@ -300,7 +300,7 @@ func TestSanitizeLLMOutput_AddsSpacingAndDropsPartialShortcodes(t *testing.T) {
 
 func TestGenerate_SendsEachPromptInItsOwnCall(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "Title: Multi\n\n### PR Description\nSummary.\n\n### Key Changes\n- Added a summary."}
+	p := &captureProvider{result: "Title: Multi\n\n## PR Description\nSummary.\n\n### Key Changes\n- Added a summary."}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 1, Additions: 1},
 		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/multi"},
@@ -341,7 +341,7 @@ func TestGenerate_SendsEachPromptInItsOwnCall(t *testing.T) {
 
 func TestGenerate_AckOnlyOutputRetriesThenFallsBack(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "### PR Description\n\nOK"}
+	p := &captureProvider{result: "## PR Description\n\nOK"}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 1, Additions: 1},
 		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/ack"},
@@ -364,13 +364,13 @@ func TestGenerate_AckOnlyOutputRetriesThenFallsBack(t *testing.T) {
 }
 
 func TestOutputFollowsFormat(t *testing.T) {
-	if !outputFollowsFormat(true, 1, "### PR Description\n\nSummary.\n\n### Key Changes\n- x") {
+	if !outputFollowsFormat(true, 1, "## PR Description\n\nSummary.\n\n### Key Changes\n- x") {
 		t.Error("conforming output was rejected")
 	}
-	if outputFollowsFormat(true, 1, "### PR Description\n\nSummary.") {
+	if outputFollowsFormat(true, 1, "## PR Description\n\nSummary.") {
 		t.Error("output missing Key Changes passed the format check")
 	}
-	if !outputFollowsFormat(true, 0, "### PR Description\n\nSummary.") {
+	if !outputFollowsFormat(true, 0, "## PR Description\n\nSummary.") {
 		t.Error("output without Key Changes failed for a no-file change")
 	}
 	if outputFollowsFormat(true, 1, "Just a paragraph.") {
@@ -383,7 +383,7 @@ func TestOutputFollowsFormat(t *testing.T) {
 
 func TestGenerate_RejectsOutputThatSkipsTheFormat(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "### PR Description\n\nA plain paragraph with no structure."}
+	p := &captureProvider{result: "## PR Description\n\nA plain paragraph with no structure."}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 2, Additions: 5, Deletions: 1},
 		BranchCtx:     &collector.BranchContext{CurrentBranch: "feat/format"},
@@ -405,13 +405,13 @@ func TestGenerate_RejectsOutputThatSkipsTheFormat(t *testing.T) {
 }
 
 func TestIsAckOnlyOutput(t *testing.T) {
-	ackOnly := []string{"OK", "ok", "ACK", "ack", "### PR Description\n\nOK", "## Summary\n\nReceived", "Title: x\n\nDone"}
+	ackOnly := []string{"OK", "ok", "ACK", "ack", "## PR Description\n\nOK", "## Summary\n\nReceived", "Title: x\n\nDone"}
 	for _, s := range ackOnly {
 		if !isAckOnlyOutput(s) {
 			t.Errorf("expected ack-only for %q", s)
 		}
 	}
-	for _, s := range []string{"### PR Description\n\nAdded a login flow.", "OK then add a feature", ""} {
+	for _, s := range []string{"## PR Description\n\nAdded a login flow.", "OK then add a feature", ""} {
 		if isAckOnlyOutput(s) {
 			t.Errorf("real content was flagged as ack-only: %q", s)
 		}
@@ -421,7 +421,7 @@ func TestIsAckOnlyOutput(t *testing.T) {
 func TestClaimsNoChanges(t *testing.T) {
 	noChange := []string{
 		"No changes were identified in the repository.",
-		"### PR Description\n\nUnable to Determine Changes\nThe provided context does not contain sufficient commit history or diff details to summarize any PR changes.",
+		"## PR Description\n\nUnable to Determine Changes\nThe provided context does not contain sufficient commit history or diff details to summarize any PR changes.",
 		"Nothing to report here.",
 		"Title: Fix\n\nNo commit history was found.",
 	}
@@ -455,7 +455,7 @@ func TestIsRefusalOutput(t *testing.T) {
 
 func TestGenerate_RejectsNoChangesClaimAndRetries(t *testing.T) {
 	t.Setenv("PRLOGUE_CONFIG_DIR", t.TempDir())
-	p := &captureProvider{result: "### PR Description\n\nNo changes were identified in the repository."}
+	p := &captureProvider{result: "## PR Description\n\nNo changes were identified in the repository."}
 	input := &GenerateInput{
 		DiffStats:     DiffStats{Files: 3, Additions: 12, Deletions: 4},
 		Commits:       []types.Commit{{Hash: "0123456789abcdef", Subject: "feat: add login"}},
@@ -474,7 +474,7 @@ func TestGenerate_RejectsNoChangesClaimAndRetries(t *testing.T) {
 }
 
 func TestGenerate_SingleCallPath(t *testing.T) {
-	p := &captureProvider{result: "Title: One\n\n### PR Description\nSummary.\n\n### Key Changes\n- Added a summary."}
+	p := &captureProvider{result: "Title: One\n\n## PR Description\nSummary.\n\n### Key Changes\n- Added a summary."}
 	input := &GenerateInput{
 		DiffStats:         DiffStats{Files: 1, Additions: 1},
 		BranchCtx:         &collector.BranchContext{CurrentBranch: "feat/one"},

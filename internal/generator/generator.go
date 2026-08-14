@@ -111,7 +111,7 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 	if strings.TrimSpace(style) == "" {
 		style = config.LoadOutputStylePrompt()
 	}
-	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "### PR Description")
+	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "## PR Description")
 
 	cleanOutput, err := g.generateWithDefense(ctx, input, prompt, style)
 	if err != nil {
@@ -141,7 +141,7 @@ func (g *Generator) generateWithDefense(ctx context.Context, input *GenerateInpu
 	if err != nil {
 		return "", err
 	}
-	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "### PR Description")
+	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "## PR Description")
 	for attempt := 0; attempt < 2; attempt++ {
 		resp, err := g.p.Chat(ctx, provider.ChatRequest{
 			Model:       g.model,
@@ -246,7 +246,7 @@ func outputFollowsFormat(useStandardStyle bool, files int, s string) bool {
 	if !useStandardStyle {
 		return true
 	}
-	if !strings.Contains(s, "### PR Description") {
+	if !strings.Contains(s, "## PR Description") {
 		return false
 	}
 	if files > 0 && !strings.Contains(s, "### Key Changes") {
@@ -262,7 +262,7 @@ func buildRetryInstruction(input *GenerateInput, useStandardStyle bool, reason s
 		"Your previous reply was rejected: %s. The repository data above contains %d changed file(s) with +%d/-%d lines and %d commit(s). Read the diff and the commit list in the repository data above. Generate the PR title and description from that data. Do not claim there are no changes and do not reply with an acknowledgment.",
 		reason, input.DiffStats.Files, input.DiffStats.Additions, input.DiffStats.Deletions, len(input.Commits))
 	if useStandardStyle {
-		instruction += " Follow the output format: put 'Title: <title>' on the first line, then '### PR Description' with the summary, then '### Key Changes' with one bullet per change."
+		instruction += " Follow the output format: put 'Title: <title>' on the first line, then '## PR Description' with the summary, then '### Key Changes' with one bullet per change."
 	}
 	return instruction
 }
@@ -407,10 +407,10 @@ func extractLLMTitle(s string) (title, body string) {
 
 func normalizeLLMSummary(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" || strings.Contains(s, "### PR Description") {
+	if s == "" || strings.Contains(s, "## PR Description") {
 		return s
 	}
-	return "### PR Description\n\n" + s
+	return "## PR Description\n\n" + s
 }
 
 func buildLLMPrompt(input *GenerateInput) string {
