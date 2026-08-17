@@ -37,7 +37,7 @@ func NewWriter(w io.Writer, message string) *Spinner {
 
 // Start begins animating. It is a no-op when w is not a terminal.
 func (s *Spinner) Start() {
-	if !s.animatable() {
+	if !animatable(s.w) {
 		return
 	}
 	s.stop = make(chan struct{})
@@ -60,12 +60,11 @@ func (s *Spinner) Stop() {
 
 func (s *Spinner) run() {
 	defer close(s.done)
-	i := 0
-	for {
+	for i := 0; ; i++ {
 		select {
 		case <-s.stop:
 			return
-		default:
+		case <-time.After(refresh):
 		}
 		frame := string(frames[i%len(frames)])
 		if s.message != "" {
@@ -73,19 +72,5 @@ func (s *Spinner) run() {
 		} else {
 			fmt.Fprint(s.w, "\r"+frame)
 		}
-		i++
-		time.Sleep(refresh)
 	}
-}
-
-func (s *Spinner) animatable() bool {
-	f, ok := s.w.(interface{ Stat() (os.FileInfo, error) })
-	if !ok {
-		return false
-	}
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
 }
