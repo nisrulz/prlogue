@@ -34,25 +34,66 @@ func (t *TemplateGenerator) Generate(input *GenerateInput) *GenerateResult {
 		body.WriteString("\n\n")
 	}
 
-	if len(input.Merged) > 0 {
-		fmt.Fprint(&body, "### Key Changes\n\n")
-		groups := types.MergeGroupByType(input.Merged)
-		for _, ct := range types.ChangeOrder {
-			items, ok := groups[ct]
-			if !ok {
-				continue
-			}
-			section := changeTypeSection(ct)
-			for _, m := range items {
-				fmt.Fprintf(&body, "- **%s:** %s\n", section, m.Summary)
-			}
-		}
-		fmt.Fprintln(&body)
+	if len(input.CommitSummaries) > 0 {
+		writeCommitSummaryChanges(&body, input.CommitSummaries)
+	} else if len(input.Merged) > 0 {
+		writeMergedChanges(&body, input.Merged)
 	}
 
 	r.Body = body.String()
 	r.CommitDesc = commitList(input.Commits)
 	return r
+}
+
+// writeCommitSummaryChanges lists model-generated key changes when the final
+// generation call failed but the per-commit summaries succeeded.
+func writeCommitSummaryChanges(b *strings.Builder, summaries []types.CommitSummary) {
+	bullets := commitSummaryBullets(summaries)
+	if len(bullets) == 0 {
+		return
+	}
+	fmt.Fprint(b, "### Key Changes\n\n")
+	for _, bullet := range bullets {
+		fmt.Fprintf(b, "- %s\n", bullet)
+	}
+	fmt.Fprintln(b)
+}
+
+func commitSummaryBullets(summaries []types.CommitSummary) []string {
+	var bullets []string
+	seen := make(map[string]bool)
+	for _, s := range summaries {
+		changes := s.KeyChanges
+		if len(changes) == 0 && strings.TrimSpace(s.Summary) != "" {
+			changes = []string{s.Summary}
+		}
+		for _, change := range changes {
+			change = strings.TrimSpace(change)
+			key := strings.ToLower(change)
+			if change == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			bullets = append(bullets, change)
+		}
+	}
+	return bullets
+}
+
+func writeMergedChanges(b *strings.Builder, merged []types.MergedSummary) {
+	fmt.Fprint(b, "### Key Changes\n\n")
+	groups := types.MergeGroupByType(merged)
+	for _, ct := range types.ChangeOrder {
+		items, ok := groups[ct]
+		if !ok {
+			continue
+		}
+		section := changeTypeSection(ct)
+		for _, m := range items {
+			fmt.Fprintf(b, "- **%s:** %s\n", section, m.Summary)
+		}
+	}
+	fmt.Fprintln(b)
 }
 
 func uniqueChangeTypes(merged []types.MergedSummary) []string {
@@ -120,7 +161,7 @@ func commitList(commits []types.Commit) string {
 	var b strings.Builder
 	fmt.Fprint(&b, "## Commits\n\n")
 	for _, c := range commits {
-		fmt.Fprintf(&b, "- `%s` %s\n", c.Hash[:7], c.Subject)
+		fmt.Fprintf(&b, "- `%s` %s\n", shortHash(c.Hash), c.Subject)
 	}
 	return b.String()
 }

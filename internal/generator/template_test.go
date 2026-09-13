@@ -54,6 +54,43 @@ func TestTemplateGenerate_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestTemplateGenerate_PrefersCommitSummaries(t *testing.T) {
+	tmpl := &TemplateGenerator{}
+	input := &GenerateInput{
+		DiffStats: DiffStats{Files: 1, Additions: 2, Deletions: 1},
+		Merged: []types.MergedSummary{
+			{FilePath: "a.go", ChangeType: "feat", Summary: "merged one-liner"},
+		},
+		CommitSummaries: []types.CommitSummary{
+			{Hash: "abc123def", Subject: "feat: add", Summary: "Adds a feature.", KeyChanges: []string{"added a.go"}},
+		},
+		BranchCtx: &collector.BranchContext{CurrentBranch: "feat/x"},
+	}
+	result := tmpl.Generate(input)
+	if !strings.Contains(result.Body, "added a.go") {
+		t.Errorf("body should use commit summary key changes: %q", result.Body)
+	}
+	if strings.Contains(result.Body, "merged one-liner") {
+		t.Errorf("body should not fall back to merged summaries: %q", result.Body)
+	}
+}
+
+func TestCommitSummaryBullets_DedupesAndFallsBackToSummary(t *testing.T) {
+	bullets := commitSummaryBullets([]types.CommitSummary{
+		{Summary: "Adds a feature.", KeyChanges: []string{"added a.go", "added a.go"}},
+		{Summary: "Fixes a crash."},
+	})
+	want := []string{"added a.go", "Fixes a crash."}
+	if len(bullets) != len(want) {
+		t.Fatalf("bullets = %v, want %v", bullets, want)
+	}
+	for i, b := range bullets {
+		if b != want[i] {
+			t.Errorf("bullet %d = %q, want %q", i, b, want[i])
+		}
+	}
+}
+
 func TestUniqueChangeTypes(t *testing.T) {
 	merged := []types.MergedSummary{
 		{ChangeType: "feat"},
