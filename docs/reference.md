@@ -107,7 +107,7 @@ The limit applies to the final generation call and to each per-commit summary ca
 
 PRlogue accepts plain HTTP only for `localhost` and loopback IP addresses. Remote endpoints must use HTTPS, and HTTP redirects are not followed.
 
-PRlogue retries a request when the failure is transient: HTTP `408`, `409`, `425`, `429`, any `5xx`, and network timeouts. It uses exponential backoff and stops after 4 attempts. Permanent errors such as `400` or `401` are not retried. A request that still fails moves the run to the template fallback.
+PRlogue retries a request when the failure is transient: HTTP `408`, `409`, `425`, `429`, any `5xx`, and network timeouts. It uses exponential backoff and stops after 4 attempts. Permanent errors such as `400` or `401` are not retried. When a summary call still fails, that commit falls back to its subject and changed paths. When the final generation call still fails, the run falls back to the local template.
 
 ## User config
 
@@ -309,11 +309,11 @@ Publishing requires the [GitHub CLI](https://cli.github.com/) and an authenticat
 
 PRlogue reads the range between the base branch and the current branch, then summarizes each commit in its own model call. The prompt for one commit is its message, its description, and its bounded diff. The model returns a JSON object with the summary, key changes, and impact.
 
-In an interactive terminal, PRlogue lists every commit while it works. Each row starts with a braille spinner, then turns into a check mark when that commit is summarized.
+In an interactive terminal, PRlogue lists every commit as it summarizes them. Each row starts with a braille spinner that turns into a check mark when the commit is done.
 
 PRlogue stores all summaries in one JSON file in the system temp directory. `prlogue generate -v` prints the file path. The final generation call reads the summaries instead of the raw diff, so the model sees a compact and complete digest of every commit.
 
-A failed summary call does not stop the run. PRlogue fills in a fallback entry with the commit subject, description, and changed file paths, so no commit is dropped. A failure to write the summaries file also does not stop the run; PRlogue keeps the in-memory summaries and prints a warning.
+A failed summary call does not stop the run. PRlogue fills in a fallback entry with the commit subject, description, and changed file paths, so no commit is dropped. A failed summaries-file write also does not stop the run: PRlogue keeps the in-memory summaries and prints a warning.
 
 Small models sometimes return a summary that is wrong but well formed. The checks in the final generation call catch the common cases:
 
@@ -332,7 +332,7 @@ PRlogue rejects that output, retries once with the repository statistics, and fa
 4. Summarize each commit from its message, description, and per-commit diff, and store all summaries in one JSON file in the temp directory.
 5. Classify and chunk changes locally for JSON and template output.
 6. Send each bounded context block (security, sanitization, output style, commit summaries) as its own model call, asking the model to hold its output until all blocks are sent.
-7. Release the collected context in a final generation call for the PR title and description. Output that echoes an acknowledgment, refuses, or claims there are no changes is rejected and retried once against the repository statistics.
+7. Release the collected context in a final generation call for the PR title and description. PRlogue rejects output that echoes an acknowledgment, refuses, or claims there are no changes, then retries once against the repository statistics.
 8. Use the local template if the server is unavailable or the output stays unusable. The template reuses the per-commit summaries for its key changes when they are available.
 9. Format the result as Markdown or JSON, then publish only when requested.
 

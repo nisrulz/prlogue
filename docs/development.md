@@ -11,7 +11,7 @@ make test-live   # end-to-end suite, see docs/testing.md
 make audit       # race detector, vet, govulncheck
 ```
 
-Run `make audit` before opening a PR. It runs the race detector, `go vet`, and `govulncheck`.
+Run `make audit` before opening a PR.
 
 To build and install from source:
 
