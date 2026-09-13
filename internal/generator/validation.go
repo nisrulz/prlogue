@@ -5,25 +5,52 @@ import (
 	"strings"
 )
 
-// outputRejectionReason explains why the model output is unusable, or returns
-// an empty string when the output is accepted.
-func outputRejectionReason(input *GenerateInput, useStandardStyle bool, s string) string {
-	if !isUsableLLMOutput(s) {
+// rejectionReason explains why model output is unusable. reasonNone means the
+// output is accepted.
+type rejectionReason int
+
+const (
+	reasonNone rejectionReason = iota
+	reasonUnusable
+	reasonAcknowledgment
+	reasonRefusal
+	reasonNoChanges
+	reasonFormat
+)
+
+func (r rejectionReason) String() string {
+	switch r {
+	case reasonUnusable:
 		return "output failed PR description validation"
-	}
-	if isAckOnlyOutput(s) {
+	case reasonAcknowledgment:
 		return "model echoed an acknowledgment instead of generating"
-	}
-	if isRefusalOutput(s) {
+	case reasonRefusal:
 		return "model refused to summarize the changes"
-	}
-	if input.DiffStats.Files > 0 && claimsNoChanges(s) {
+	case reasonNoChanges:
 		return "model reported no changes despite repository data"
-	}
-	if !outputFollowsFormat(useStandardStyle, input.DiffStats.Files, s) {
+	case reasonFormat:
 		return "output does not follow the configured output format"
+	default:
+		return ""
 	}
-	return ""
+}
+
+// outputRejectionReason classifies why the model output is unusable, or returns
+// reasonNone when the output is accepted.
+func outputRejectionReason(input *GenerateInput, useStandardStyle bool, s string) rejectionReason {
+	switch {
+	case !isUsableLLMOutput(s):
+		return reasonUnusable
+	case isAckOnlyOutput(s):
+		return reasonAcknowledgment
+	case isRefusalOutput(s):
+		return reasonRefusal
+	case input.DiffStats.Files > 0 && claimsNoChanges(s):
+		return reasonNoChanges
+	case !outputFollowsFormat(useStandardStyle, input.DiffStats.Files, s):
+		return reasonFormat
+	}
+	return reasonNone
 }
 
 // outputFollowsFormat reports whether the reply carries the headings the
@@ -44,7 +71,7 @@ func outputFollowsFormat(useStandardStyle bool, files int, s string) bool {
 
 // buildRetryInstruction points the model back at the repository data and the
 // collected statistics after a rejected output.
-func buildRetryInstruction(input *GenerateInput, useStandardStyle bool, reason string) string {
+func buildRetryInstruction(input *GenerateInput, useStandardStyle bool, reason rejectionReason) string {
 	instruction := fmt.Sprintf(
 		"Your previous reply was rejected: %s. The repository data above contains %d changed file(s) with +%d/-%d lines and %d commit(s). Read the diff and the commit list in the repository data above. Generate the PR title and description from that data. Do not claim there are no changes and do not reply with an acknowledgment.",
 		reason, input.DiffStats.Files, input.DiffStats.Additions, input.DiffStats.Deletions, len(input.Commits))

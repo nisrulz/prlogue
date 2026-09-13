@@ -382,6 +382,26 @@ func TestGenerate_AckOnlyOutputRetriesThenFallsBack(t *testing.T) {
 	}
 }
 
+func TestOutputRejectionReason_Classifies(t *testing.T) {
+	input := &GenerateInput{DiffStats: DiffStats{Files: 1}}
+	cases := []struct {
+		name string
+		out  string
+		want rejectionReason
+	}{
+		{"acknowledgment", "## PR Description\n\nOK", reasonAcknowledgment},
+		{"refusal", "## PR Description\n\nI cannot help with that.", reasonRefusal},
+		{"no changes", "## PR Description\n\nNo changes were identified.", reasonNoChanges},
+		{"format", "## PR Description\n\nA paragraph.", reasonFormat},
+		{"accepted", "## PR Description\n\nSummary.\n\n### Key Changes\n- x", reasonNone},
+	}
+	for _, tc := range cases {
+		if got := outputRejectionReason(input, true, tc.out); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestOutputFollowsFormat(t *testing.T) {
 	if !outputFollowsFormat(true, 1, "## PR Description\n\nSummary.\n\n### Key Changes\n- x") {
 		t.Error("conforming output was rejected")

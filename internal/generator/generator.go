@@ -169,7 +169,7 @@ func (g *Generator) generateWithDefense(ctx context.Context, input *GenerateInpu
 		}
 		cleanOutput := sanitizeLLMOutput(resp.Content)
 		reason := outputRejectionReason(input, useStandardStyle, cleanOutput)
-		if reason == "" {
+		if reason == reasonNone {
 			return cleanOutput, nil
 		}
 		if attempt == 0 {
