@@ -56,50 +56,17 @@ func runGenerate() error {
 	}
 	noThink := cfg.NoThink
 
-	baseBranch := cfg.Git.DefaultBranch
-	if baseBranch == "" {
-		branch, err := git.DetectDefaultBranch()
-		if err != nil {
-			return fmt.Errorf("could not detect base branch: %w\n  Set git.default_branch in your config", err)
-		}
-		baseBranch = branch
-	}
-	if err := git.ValidateBranch(baseBranch); err != nil {
-		return err
-	}
-	currentBranch, err := git.CurrentBranch()
+	baseBranch, currentBranch, err := resolveBranches(cfg)
 	if err != nil {
-		return fmt.Errorf("could not determine current branch: %w", err)
-	}
-	if err := git.ValidateBranch(currentBranch); err != nil {
 		return err
 	}
 
-	commits, err := collector.CollectCommits(baseBranch, currentBranch, 50)
-	if err != nil && verbose {
-		fmt.Fprintf(os.Stderr, "Commit warning: %v\n", err)
-	}
+	commits, branchCtx, diffs, err := collectRepository(baseBranch, currentBranch)
 	if err != nil {
-		commits = nil
-	}
-	branchCtx, err := collector.CollectContext(baseBranch, currentBranch, commits)
-	if err != nil {
-		return fmt.Errorf("collect context: %w", err)
-	}
-
-	diffs, err := collector.CollectDiff(baseBranch, currentBranch, genFlags.staged)
-	if err != nil {
-		return fmt.Errorf("collect diff: %w", err)
-	}
-	if len(diffs) == 0 {
-		if genFlags.staged {
-			return fmt.Errorf("no staged changes found")
-		}
-		return fmt.Errorf("no changes found between %s and %s", baseBranch, currentBranch)
+		return err
 	}
 
 	contextLen := cfg.ContextLength()
-
 	diffStats := computeDiffStats(diffs)
 	if verbose {
 		printVerboseInfo(settings.name, settings.baseURL, settings.model, baseBranch, contextLen, branchCtx, diffStats, len(commits))
@@ -107,7 +74,7 @@ func runGenerate() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	p := newProvider(settings.baseURL, cfg.APIKey, settings.model)
+	p := provider.NewOpenAICompatible(settings.baseURL, cfg.APIKey, settings.model)
 
 	if len(commits) > 0 {
 		fmt.Fprintln(os.Stderr, sectionBanner("Summarize commits"))
@@ -128,7 +95,6 @@ func runGenerate() error {
 	}
 
 	genInput := buildGenerateInput(diffs, commits, branchCtx, cfg, noThink, promptByteLimit(contextLen), commitSummaries)
-
 	gen := generator.NewGenerator(p, settings.model)
 
 	spin := spinner.New("Generating PR description")
@@ -142,22 +108,12 @@ func runGenerate() error {
 	fmt.Fprintln(os.Stderr, sectionBanner("Generated output"))
 	fmt.Fprintln(os.Stderr)
 
-	format := cfg.Output.Format
-
-	output, err := formatOutput(genResult, genInput, format)
+	output, err := formatOutput(genResult, genInput, cfg.Output.Format)
 	if err != nil {
 		return err
 	}
-
-	if genFlags.outputFile != "" {
-		if err := os.WriteFile(genFlags.outputFile, []byte(output), 0644); err != nil {
-			return fmt.Errorf("write output: %w", err)
-		}
-		if verbose {
-			fmt.Fprintf(os.Stderr, "Written to %s\n", genFlags.outputFile)
-		}
-	} else {
-		fmt.Println(output)
+	if err := writeGeneratedOutput(output, genFlags.outputFile); err != nil {
+		return err
 	}
 
 	if genFlags.publish {
@@ -166,6 +122,71 @@ func runGenerate() error {
 		}
 	}
 
+	return nil
+}
+
+// resolveBranches returns the base and current branch, validating both.
+func resolveBranches(cfg *config.Config) (string, string, error) {
+	baseBranch := cfg.Git.DefaultBranch
+	if baseBranch == "" {
+		branch, err := git.DetectDefaultBranch()
+		if err != nil {
+			return "", "", fmt.Errorf("could not detect base branch: %w\n  Set git.default_branch in your config", err)
+		}
+		baseBranch = branch
+	}
+	if err := git.ValidateBranch(baseBranch); err != nil {
+		return "", "", err
+	}
+	currentBranch, err := git.CurrentBranch()
+	if err != nil {
+		return "", "", fmt.Errorf("could not determine current branch: %w", err)
+	}
+	if err := git.ValidateBranch(currentBranch); err != nil {
+		return "", "", err
+	}
+	return baseBranch, currentBranch, nil
+}
+
+// collectRepository gathers commits, branch context, and the diff for the
+// branch pair. It returns an error when there is nothing to summarize.
+func collectRepository(baseBranch, currentBranch string) ([]types.Commit, *collector.BranchContext, []types.FileDiff, error) {
+	commits, err := collector.CollectCommits(baseBranch, currentBranch, 50)
+	if err != nil && verbose {
+		fmt.Fprintf(os.Stderr, "Commit warning: %v\n", err)
+	}
+	if err != nil {
+		commits = nil
+	}
+	branchCtx, err := collector.CollectContext(baseBranch, currentBranch, commits)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("collect context: %w", err)
+	}
+	diffs, err := collector.CollectDiff(baseBranch, currentBranch, genFlags.staged)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("collect diff: %w", err)
+	}
+	if len(diffs) == 0 {
+		if genFlags.staged {
+			return nil, nil, nil, fmt.Errorf("no staged changes found")
+		}
+		return nil, nil, nil, fmt.Errorf("no changes found between %s and %s", baseBranch, currentBranch)
+	}
+	return commits, branchCtx, diffs, nil
+}
+
+// writeGeneratedOutput prints the body or writes it to path.
+func writeGeneratedOutput(output, path string) error {
+	if path == "" {
+		fmt.Println(output)
+		return nil
+	}
+	if err := os.WriteFile(path, []byte(output), 0644); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Written to %s\n", path)
+	}
 	return nil
 }
 
@@ -188,10 +209,6 @@ func resolveProviderSettings(cfg *config.Config) (providerSettings, error) {
 		return providerSettings{}, fmt.Errorf("model must not be empty")
 	}
 	return settings, nil
-}
-
-func newProvider(baseURL, apiKey, model string) provider.Provider {
-	return provider.NewOpenAICompatible(baseURL, apiKey, model)
 }
 
 func computeDiffStats(diffs []types.FileDiff) generator.DiffStats {
