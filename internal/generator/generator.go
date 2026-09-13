@@ -79,6 +79,20 @@ const (
 	generateInstruction = "FINAL REQUEST: use the security policy, the output sanitization policy, the output style, and the repository data supplied above to generate the PR title and description now. Do not reply with an acknowledgment such as ACK or OK."
 )
 
+const (
+	// Output markers required by the built-in style prompt. The generator
+	// validates the model reply against them.
+	titleLabel         = "Title:"
+	descriptionHeading = "## PR Description"
+	keyChangesHeading  = "### Key Changes"
+)
+
+// isStandardStyle reports whether the style prompt requests the built-in title
+// and PR description markers, so the reply can be validated against them.
+func isStandardStyle(style string) bool {
+	return strings.Contains(style, titleLabel) && strings.Contains(style, descriptionHeading)
+}
+
 func NewGenerator(p provider.Provider, model string) *Generator {
 	return &Generator{p: p, model: model}
 }
@@ -111,7 +125,7 @@ func (g *Generator) generateLLM(ctx context.Context, input *GenerateInput) (*Gen
 	if strings.TrimSpace(style) == "" {
 		style = config.LoadOutputStylePrompt()
 	}
-	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "## PR Description")
+	useStandardStyle := isStandardStyle(style)
 
 	cleanOutput, err := g.generateWithDefense(ctx, input, prompt, style)
 	if err != nil {
@@ -141,7 +155,7 @@ func (g *Generator) generateWithDefense(ctx context.Context, input *GenerateInpu
 	if err != nil {
 		return "", err
 	}
-	useStandardStyle := strings.Contains(style, "Title:") && strings.Contains(style, "## PR Description")
+	useStandardStyle := isStandardStyle(style)
 	for attempt := 0; attempt < 2; attempt++ {
 		resp, err := g.p.Chat(ctx, provider.ChatRequest{
 			Model:       g.model,
@@ -246,10 +260,10 @@ func outputFollowsFormat(useStandardStyle bool, files int, s string) bool {
 	if !useStandardStyle {
 		return true
 	}
-	if !strings.Contains(s, "## PR Description") {
+	if !strings.Contains(s, descriptionHeading) {
 		return false
 	}
-	if files > 0 && !strings.Contains(s, "### Key Changes") {
+	if files > 0 && !strings.Contains(s, keyChangesHeading) {
 		return false
 	}
 	return true
@@ -392,13 +406,14 @@ func isMaxTokensError(err error) bool {
 
 func extractLLMTitle(s string) (title, body string) {
 	lines := strings.SplitN(s, "\n", 2)
-	if len(lines) == 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), "Title:") {
-		title = strings.TrimSpace(strings.TrimPrefix(lines[0], "Title:"))
+	first := strings.TrimSpace(lines[0])
+	if len(lines) == 2 && strings.HasPrefix(first, titleLabel) {
+		title = strings.TrimSpace(strings.TrimPrefix(first, titleLabel))
 		body = strings.TrimSpace(lines[1])
 		return title, body
 	}
-	if len(lines) == 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), "# ") {
-		title = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[0]), "# "))
+	if len(lines) == 2 && strings.HasPrefix(first, "# ") {
+		title = strings.TrimSpace(strings.TrimPrefix(first, "# "))
 		body = strings.TrimSpace(lines[1])
 		return title, body
 	}
@@ -407,10 +422,10 @@ func extractLLMTitle(s string) (title, body string) {
 
 func normalizeLLMSummary(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" || strings.Contains(s, "## PR Description") {
+	if s == "" || strings.Contains(s, descriptionHeading) {
 		return s
 	}
-	return "## PR Description\n\n" + s
+	return descriptionHeading + "\n\n" + s
 }
 
 func buildLLMPrompt(input *GenerateInput) string {

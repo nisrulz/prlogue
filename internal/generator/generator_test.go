@@ -33,6 +33,25 @@ func TestExtractLLMTitle_NoTitle(t *testing.T) {
 	}
 }
 
+func TestExtractLLMTitle_LeadingWhitespace(t *testing.T) {
+	title, body := extractLLMTitle("  Title: Fix crash\n\n## PR Description\nFixed.")
+	if title != "Fix crash" {
+		t.Errorf("title = %q, want %q", title, "Fix crash")
+	}
+	if !strings.Contains(body, "Fixed.") {
+		t.Errorf("body = %q", body)
+	}
+}
+
+func TestIsStandardStyle(t *testing.T) {
+	if !isStandardStyle("Title: x\n## PR Description") {
+		t.Error("expected standard style to be detected")
+	}
+	if isStandardStyle("Write a concise summary") {
+		t.Error("plain style was detected as standard")
+	}
+}
+
 func TestNormalizeLLMSummary_AddsDefaultHeading(t *testing.T) {
 	got := normalizeLLMSummary("The API now supports push tokens.")
 	want := "## PR Description\n\nThe API now supports push tokens."
