@@ -1,6 +1,6 @@
 # Development
 
-PRlogue needs Go 1.25 or newer.
+PRlogue needs Go 1.26 or newer.
 
 ## Set up
 
@@ -30,4 +30,5 @@ The command copies the binary to `~/go/bin`.
 - Send each prompt block in its own model call. Hold output until every block is sent, then generate in a final call.
 - Summarize each commit from its message, description, and diff. Store all summaries in one JSON file and use that as the generation context instead of raw git data.
 - Reject model output that echoes an acknowledgment, refuses, or claims no changes when repository data exists. Retry once with the repository statistics, then fall back to the template.
+- Retry transient provider failures with backoff. Classify errors by HTTP status and transport type, not by message text.
 - Prefer the standard library and existing dependencies.

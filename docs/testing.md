@@ -65,4 +65,4 @@ base_url: http://127.0.0.1:65535/v1
 prlogue generate -v
 ```
 
-The command prints a warning and returns a template description. It does not need a live model server.
+The command prints a warning and returns a template description. It does not need a live model server. The refused connection counts as a transient failure, so PRlogue retries it a few times before it falls back; the run takes a few seconds longer.

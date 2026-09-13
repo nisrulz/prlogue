@@ -31,7 +31,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Tags matching `v*` start the release workflow. It uses Go 1.25 and runs formatting, module, race, vet, and vulnerability checks before GoReleaser starts.
+Tags matching `v*` start the release workflow. It uses Go 1.26 and runs formatting, module, race, vet, and vulnerability checks before GoReleaser starts.
 
 The workflow publishes:
 

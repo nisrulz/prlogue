@@ -29,8 +29,12 @@ graph LR
 | `internal/processor/analyzer.go` | Change type classification |
 | `internal/processor/fallback.go` | Template fallback input preparation |
 | `internal/provider/openai_compat.go` | OpenAI-compatible provider |
+| `internal/provider/retry.go` | Retry policy + typed HTTP errors |
 | `internal/provider/interface.go` | Provider interface |
-| `internal/generator/generator.go` | LLM PR body generation |
+| `internal/generator/generator.go` | Staged-context pipeline + fallback |
+| `internal/generator/validation.go` | Output rejection checks + retry instruction |
+| `internal/generator/prompt.go` | Bounded repository-data prompt |
+| `internal/generator/extract.go` | Title and body extraction |
 | `internal/generator/summarizer.go` | Per-commit LLM summaries + single JSON file |
 | `internal/generator/sanitizer.go` | LLM output cleanup and structure sanitization |
 | `internal/generator/template.go` | Template fallback |
@@ -40,7 +44,10 @@ graph LR
 | `internal/collector/commit.go` | git log collection + per-commit diffs |
 | `internal/collector/context.go` | Branch + issue refs |
 | `internal/sysinfo/memory.go` | RAM detection + LMS integration |
-| `internal/config/config.go` | Trusted config, provider profiles, validation, and auto context |
+| `internal/config/config.go` | Config types + trusted loading |
+| `internal/config/save.go` | Config read/write and reset |
+| `internal/config/validate.go` | Validation + auto context sizing |
+| `internal/config/prompts.go` | Embedded prompts + output style file |
 | `internal/config/prompts/default_prompt.txt` | Embedded PR analysis task prompt |
 | `internal/config/prompts/output_style_prompt.txt` | Embedded fallback style prompt |
 | `internal/config/prompts/security_prompt.txt` | Immutable security system prompt |
@@ -111,6 +118,8 @@ Use `--config` only with a trusted config file. Keep API keys in
 - Reject model output that echoes an acknowledgment, refuses, or claims there
   are no changes when repository data exists. Retry once with the repository
   statistics, then fall back to the template.
+- Retry transient provider failures with exponential backoff. Classify errors
+  by HTTP status and transport type, not by message text.
 - Prefer the standard library and existing dependencies.
 - Keep unit tests next to the code they test.
 
