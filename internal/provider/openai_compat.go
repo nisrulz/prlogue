@@ -24,6 +24,7 @@ type OpenAICompatible struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	retry      retryPolicy
 }
 
 func NewOpenAICompatible(baseURL, apiKey, model string) *OpenAICompatible {
@@ -58,6 +59,7 @@ func NewOpenAICompatibleWithHTTP(baseURL, apiKey, model string, httpClient *http
 		baseURL:    config.BaseURL,
 		apiKey:     apiKey,
 		httpClient: httpClient,
+		retry:      defaultRetryPolicy(),
 	}
 }
 
@@ -81,11 +83,23 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 	if err := validateExtraBody(req.ExtraBody); err != nil {
 		return nil, err
 	}
+	apiReq := buildChatRequest(p.model, req)
+
+	resp, err := p.completeWithRetry(ctx, apiReq, req)
+	if err != nil {
+		return nil, err
+	}
+	if req.NoThink {
+		resp.Content = stripThinkBlocks(resp.Content)
+	}
+	return resp, nil
+}
+
+func buildChatRequest(fallbackModel string, req ChatRequest) openai.ChatCompletionRequest {
 	model := req.Model
 	if model == "" {
-		model = p.model
+		model = fallbackModel
 	}
-
 	apiMessages := make([]openai.ChatCompletionMessage, len(req.Messages))
 	for i, m := range req.Messages {
 		apiMessages[i] = openai.ChatCompletionMessage{
@@ -93,51 +107,59 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req ChatRequest) (*ChatResp
 			Content: m.Content,
 		}
 	}
-
-	apiReq := openai.ChatCompletionRequest{
+	return openai.ChatCompletionRequest{
 		Model:       model,
 		Messages:    apiMessages,
 		MaxTokens:   req.MaxTokens,
 		Temperature: float32(req.Temperature),
 	}
+}
 
-	var respContent string
-	var respModel string
-	var usage TokenUsage
-
-	if len(req.ExtraBody) > 0 {
-		chatResp, err := p.chatWithExtraBody(ctx, apiReq, req.ExtraBody)
-		if err != nil {
+// completeWithRetry retries transient provider failures with backoff. It stops
+// early when the caller context is done or the failure is permanent.
+func (p *OpenAICompatible) completeWithRetry(ctx context.Context, apiReq openai.ChatCompletionRequest, req ChatRequest) (*ChatResponse, error) {
+	attempts := p.retry.maxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			if err := waitBackoff(ctx, p.retry, attempt); err != nil {
+				return nil, lastErr
+			}
+		}
+		resp, err := p.complete(ctx, apiReq, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !isRetryable(err) || ctx.Err() != nil {
 			return nil, err
 		}
-		respContent = chatResp.Content
-		respModel = chatResp.Model
-		usage = chatResp.Usage
-	} else {
-		resp, err := p.client.CreateChatCompletion(ctx, apiReq)
-		if err != nil {
-			return nil, fmt.Errorf("chat completion: %w", err)
-		}
-		if len(resp.Choices) == 0 {
-			return nil, fmt.Errorf("no choices in response")
-		}
-		respContent = resp.Choices[0].Message.Content
-		respModel = resp.Model
-		usage = TokenUsage{
+	}
+	return nil, lastErr
+}
+
+func (p *OpenAICompatible) complete(ctx context.Context, apiReq openai.ChatCompletionRequest, req ChatRequest) (*ChatResponse, error) {
+	if len(req.ExtraBody) > 0 {
+		return p.chatWithExtraBody(ctx, apiReq, req.ExtraBody)
+	}
+	resp, err := p.client.CreateChatCompletion(ctx, apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("chat completion: %w", err)
+	}
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
+	}
+	return &ChatResponse{
+		Content: resp.Choices[0].Message.Content,
+		Model:   resp.Model,
+		Usage: TokenUsage{
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,
 			TotalTokens:      resp.Usage.TotalTokens,
-		}
-	}
-
-	if req.NoThink {
-		respContent = stripThinkBlocks(respContent)
-	}
-
-	return &ChatResponse{
-		Content: respContent,
-		Model:   respModel,
-		Usage:   usage,
+		},
 	}, nil
 }
 
@@ -205,7 +227,7 @@ func (p *OpenAICompatible) chatWithExtraBody(ctx context.Context, baseReq openai
 		if len(respBody) > maxErrorBytes {
 			respBody = respBody[:maxErrorBytes]
 		}
-		return nil, fmt.Errorf("API error (status %d): %s", httpResp.StatusCode, string(respBody))
+		return nil, &HTTPError{StatusCode: httpResp.StatusCode, Body: string(respBody)}
 	}
 
 	var result struct {
