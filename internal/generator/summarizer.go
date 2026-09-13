@@ -24,8 +24,7 @@ type CommitSummarizer struct {
 	maxTokens int
 }
 
-func NewCommitSummarizer(p provider.Provider, model string, noThink bool, extraBody map[string]any, contextLen int) *CommitSummarizer {
-	maxTokens := contextLen
+func NewCommitSummarizer(p provider.Provider, model string, noThink bool, extraBody map[string]any, maxTokens int) *CommitSummarizer {
 	if maxTokens <= 0 {
 		maxTokens = config.DefaultResponseMaxTokens
 	}
@@ -34,7 +33,8 @@ func NewCommitSummarizer(p provider.Provider, model string, noThink bool, extraB
 
 // Summarize produces a summary per commit and stores all of them in one JSON
 // file in the system temp directory. The returned path is empty when there are
-// no commits. A failed summary call falls back to the commit subject and its
+// no commits or the file cannot be written; the in-memory summaries are still
+// returned. A failed summary call falls back to the commit subject and its
 // changed paths so nothing is dropped. onProgress runs after every commit and
 // is safe to leave nil.
 func (s *CommitSummarizer) Summarize(ctx context.Context, commits []types.Commit, onProgress func()) ([]types.CommitSummary, string, error) {
@@ -50,7 +50,8 @@ func (s *CommitSummarizer) Summarize(ctx context.Context, commits []types.Commit
 	}
 	path, err := writeCommitSummaries(summaries)
 	if err != nil {
-		return nil, "", err
+		fmt.Fprintf(os.Stderr, "⚠ Could not write commit summaries file: %v\n", err)
+		return summaries, "", nil
 	}
 	return summaries, path, nil
 }

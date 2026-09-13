@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,6 +151,22 @@ func TestCommitSummarizer_NoCommits(t *testing.T) {
 	summaries, path, err := s.Summarize(context.Background(), nil, nil)
 	if err != nil || summaries != nil || path != "" {
 		t.Errorf("no-commit case: summaries=%v path=%q err=%v", summaries, path, err)
+	}
+}
+
+func TestCommitSummarizer_ContinuesWhenFileWriteFails(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	p := &captureProvider{result: `{"subject":"feat: x","summary":"Adds x.","key_changes":[],"impact":""}`}
+	s := NewCommitSummarizer(p, "model", false, nil, 8192)
+	summaries, path, err := s.Summarize(context.Background(), []types.Commit{{Hash: "abc123", Subject: "feat: x"}}, nil)
+	if err != nil {
+		t.Fatalf("Summarize should not fail when the file cannot be written: %v", err)
+	}
+	if path != "" {
+		t.Errorf("path = %q, want empty", path)
+	}
+	if len(summaries) != 1 || summaries[0].Summary != "Adds x." {
+		t.Errorf("summaries = %+v, want in-memory summary", summaries)
 	}
 }
 

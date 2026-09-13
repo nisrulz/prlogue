@@ -114,7 +114,7 @@ func runGenerate() error {
 	}
 	progress := spinner.NewProgressList(os.Stderr, commitLabels(commits))
 	progress.Start()
-	summarizer := generator.NewCommitSummarizer(p, settings.model, noThink, cfg.ExtraBody, contextLen)
+	summarizer := generator.NewCommitSummarizer(p, settings.model, noThink, cfg.ExtraBody, cfg.ResponseMaxTokens)
 	commitSummaries, summariesPath, err := summarizer.Summarize(ctx, commits, progress.Advance)
 	progress.Finish()
 	if err != nil {
