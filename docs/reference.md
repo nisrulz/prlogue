@@ -44,7 +44,7 @@ prlogue generate --publish
 
 PRlogue accepts any server that implements the OpenAI chat API. Set `provider`, `base_url`, and `model` in the user config. The `name` value is a label for `init`, `doctor`, and `config` output.
 
-Here are common settings:
+Common settings:
 
 | Server | `name` | `base_url` | Example `model` |
 | --- | --- | --- | --- |

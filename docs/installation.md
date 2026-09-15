@@ -1,6 +1,6 @@
 # Installation
 
-PRlogue requires Go 1.27 or newer.
+PRlogue requires Go 1.27 or newer. The project pins Go 1.27.1 in `go.mod`, so the build uses that exact toolchain and downloads it when your install is older.
 
 ## Install with Go
 
@@ -16,7 +16,7 @@ cd prlogue
 make install
 ```
 
-Both commands install the binary in `$(go env GOPATH)/bin`. Make sure that directory is in your `PATH`.
+`go install` writes the binary to `$(go env GOPATH)/bin` (or `GOBIN` if you set it). `make install` copies it to `~/go/bin`. Make sure the directory for the command you used is in your `PATH`.
 
 ## Install a release binary
 

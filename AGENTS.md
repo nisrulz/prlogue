@@ -76,6 +76,9 @@ Run `make audit` before opening a PR. It runs the race detector, `go vet`, and
 Use `make install` to install the binary at `~/go/bin`. Use `make snapshot` to
 test a GoReleaser build without publishing.
 
+Go is pinned to 1.27.1 in `go.mod`. CI reads it with `go-version-file`, and the
+Makefile exports `GOTOOLCHAIN=go1.27.1` so every target uses that toolchain.
+
 `make test-live` builds the binary and runs the Go end-to-end suite in `e2e/`
 (`go test -tags e2e`). Local runs require a live Ollama provider. CI sets
 `PRLOGUE_LIVE_TEST_PROVIDER=mock` and uses an in-process OpenAI-compatible
