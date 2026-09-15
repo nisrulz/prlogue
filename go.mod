@@ -1,6 +1,8 @@
 module github.com/nisrulz/prlogue
 
-go 1.26.0
+go 1.27.0
+
+toolchain go1.27.1
 
 require (
 	github.com/sashabaranov/go-openai v1.42.0

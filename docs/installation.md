@@ -1,6 +1,6 @@
 # Installation
 
-PRlogue requires Go 1.26 or newer.
+PRlogue requires Go 1.27 or newer.
 
 ## Install with Go
 

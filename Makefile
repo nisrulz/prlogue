@@ -1,5 +1,7 @@
 .PHONY: build install uninstall test test-live audit test-cover clean snapshot release help
 
+export GOTOOLCHAIN := go1.27.1
+
 BINARY=prlogue
 DESTDIR=$(HOME)/go/bin
 DESTDIR_SHOW=$(patsubst $(HOME)/%,~/%,$(DESTDIR))

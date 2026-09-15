@@ -1,6 +1,8 @@
 # Development
 
-PRlogue needs Go 1.26 or newer.
+PRlogue needs Go 1.27 or newer. The exact version is pinned in `go.mod`
+(`toolchain go1.27.1`) and `.go-version`. CI reads it from `go.mod`, and the
+`make` targets force `GOTOOLCHAIN=go1.27.1` so a newer local Go cannot drift.
 
 ## Set up
 
