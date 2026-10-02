@@ -6,11 +6,13 @@ BINARY=prlogue
 DESTDIR=$(HOME)/go/bin
 DESTDIR_SHOW=$(patsubst $(HOME)/%,~/%,$(DESTDIR))
 SPIN=go run ./scripts/spin
+BUILD_FLAGS=-trimpath -ldflags "-s -w"
 .DEFAULT_GOAL := help
 
-build:     ## Build the binary
+build:     ## Build the optimized release binary
 	@echo "Building $(BINARY)..."
-	@go build -o $(BINARY) .
+	@go build $(BUILD_FLAGS) -o $(BINARY) .
+	@scripts/verify-release.sh $(BINARY)
 	@echo "✓ Built $(BINARY)"
 
 install: build  ## Install binary to ~/go/bin (no password needed)
@@ -60,9 +62,11 @@ clean:     ## Remove build artifacts
 
 snapshot:  ## Test goreleaser build locally (no publish)
 	@$(SPIN) "Building a snapshot release (no publish)..." -- goreleaser release --snapshot --clean
+	@scripts/verify-release.sh
 
 release:   ## Run full goreleaser release (requires tag)
 	@$(SPIN) "Running the release build..." -- goreleaser release --clean
+	@scripts/verify-release.sh
 
 help:      ## Show this help
 	@echo "Usage: make <target>"

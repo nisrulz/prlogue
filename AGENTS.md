@@ -54,6 +54,7 @@ graph LR
 | `internal/config/prompts/sanitization_prompt.txt` | Immutable output sanitization system prompt |
 | `internal/config/prompts/commit_summary_prompt.txt` | Embedded per-commit summarization prompt |
 | `internal/types/types.go` | Shared types + helpers |
+| `scripts/verify-release.sh` | Fails when a built binary is not trimmed and stripped |
 | `e2e/` | Go end-to-end test suite (build tag `e2e`; mock provider runs in-process) |
 
 ## Commands
@@ -75,6 +76,10 @@ Run `make audit` before opening a PR. It runs the race detector, `go vet`, and
 
 Use `make install` to install the binary at `~/go/bin`. Use `make snapshot` to
 test a GoReleaser build without publishing.
+
+Every binary is built with `-trimpath` and `-ldflags "-s -w"`. Do not remove
+those flags from `.goreleaser.yaml` or the Makefile. `scripts/verify-release.sh`
+checks both settings and must pass before a build is released.
 
 Go is pinned to 1.27.1 in `go.mod`. CI reads it with `go-version-file`, and the
 Makefile exports `GOTOOLCHAIN=go1.27.1` so every target uses that toolchain.
